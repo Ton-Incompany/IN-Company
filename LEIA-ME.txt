@@ -1,0 +1,32 @@
+IN COMPANY CHILLI BEANS - VERSÃO INSTALÁVEL (PWA)
+
+Arquivos desta pasta:
+  index.html, manifest.webmanifest, sw.js, icons/   -> a página do app (vai para a hospedagem)
+  Code.gs                                          -> o serviço de dados (vai para o Apps Script)
+
+PARTE 1 - SERVIÇO DE DADOS (Apps Script)
+1. Abra o seu projeto no Apps Script. Apague o arquivo Index.html (não é mais usado).
+2. Substitua todo o Code.gs por este Code.gs.
+3. Na linha  var CHAVE = 'TROQUE-ESTA-CHAVE';  invente uma senha longa (12+ caracteres) e salve.
+4. Implantar > Gerenciar implantações > editar (lápis) > Versão: Nova versão.
+   Em "Quem pode acessar" escolha: Qualquer pessoa. "Executar como": Eu.
+   (a chave protege os dados; sem ela ninguém lê nada)
+5. Copie o endereço do aplicativo da web (termina em /exec).
+
+PARTE 2 - HOSPEDAR A PÁGINA (GitHub Pages, gratuito)
+1. Crie uma conta em github.com e um repositório novo, público, chamado, por exemplo, incompany.
+2. Add file > Upload files: envie index.html, manifest.webmanifest, sw.js e a pasta icons.
+3. Settings > Pages > Source: Deploy from a branch > main > / (root) > Save.
+4. Em 1 a 2 minutos o endereço fica: https://SEU-USUARIO.github.io/incompany/
+
+PARTE 3 - INSTALAR
+1. Abra esse endereço no Chrome do Android (ou no Chrome do Windows).
+2. Na tela "Conexão com a planilha", cole o endereço /exec e a chave. Toque em Conectar.
+3. Menu do Chrome > Instalar app (Android) ou o ícone de instalar na barra de endereço (Windows).
+   O ícone da Chilli Beans aparece na tela inicial e o app abre em tela cheia.
+
+OBSERVAÇÕES
+- A página não guarda dados: tudo vai para a sua planilha Google. A senha do app e a chave ficam
+  neste aparelho; em outro aparelho é preciso informar o endereço /exec e a chave de novo.
+- Se trocar a chave no Code.gs, crie Nova versão e informe a nova em Configurações > Conexão com a planilha.
+- O app abre sem internet, mas só salva com internet.
