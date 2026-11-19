@@ -162,6 +162,7 @@ setTimeout(fechar,2800);
   </div>
   <div class="tabs" id="tabs" role="tablist"></div>
   <div id="lista"></div>
+  <div class="acts" style="margin-top:18px"><button id="atBtn" type="button">Outras atividades</button></div>
 </main>
 
 <dialog id="dlg">
@@ -240,19 +241,30 @@ setTimeout(fechar,2800);
     <div class="acts"><button class="l" id="sAdd">+ Adicionar toque</button><button class="l" id="sRest">Restaurar padrão</button></div>
   </div></details>
   <details class="mn"><summary>Planilha do Google</summary><div class="mb">
-    <label for="pUrl">Link da planilha (endereço do Apps Script, termina em /exec)</label><input id="pUrl" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
-    <label for="pKey">Senha de acesso</label><input id="pKey" type="password" autocomplete="off">
-    <div class="acts"><button class="p" id="pTest" type="button">Salvar e conectar</button></div>
-    <div class="mu" id="pMsg" role="status" style="margin-top:8px"></div>
+    <p class="mu" id="gSt" style="margin:0 0 8px"></p>
+    <div class="acts"><button class="p" id="gIn" type="button">Entrar com Google</button><button class="l" id="gOut" type="button" hidden>Sair da conta</button></div>
+    <p class="mu" id="gErr1" style="color:#E30613"></p>
+    <details class="mn" style="margin-top:10px"><summary>Avançado</summary><div class="mb">
+      <label for="gCid">ID do cliente Google (OAuth)</label><input id="gCid" type="text" autocomplete="off" placeholder="123456-abc.apps.googleusercontent.com">
+      <div class="acts"><button class="l" id="gCidOk" type="button">Salvar ID</button></div>
+      <p class="mu" style="margin:14px 0 4px">Conexão antiga por Apps Script (opcional):</p>
+      <label for="pUrl">Link da planilha (endereço do Apps Script, termina em /exec)</label><input id="pUrl" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
+      <label for="pKey">Senha de acesso</label><input id="pKey" type="password" autocomplete="off">
+      <div class="acts"><button class="p" id="pTest" type="button">Salvar e conectar</button></div>
+      <div class="mu" id="pMsg" role="status" style="margin-top:8px"></div>
+    </div></details>
   </div></details>
   <details class="mn"><summary>Senha e recuperação</summary><div class="mb">
     <label for="sMail">E-mail de recuperação</label><input id="sMail" type="text">
     <div class="acts"><button class="l" id="sSenha">Criar senha</button><button class="l" id="sEsq">Esqueci a senha</button></div>
   </div></details>
-  <details class="mn"><summary>Exportar dados (CSV)</summary><div class="mb">
+  <details class="mn"><summary>Observações do resultado</summary><div class="mb"><label for="sObs">Textos pré-definidos (um por linha)</label><textarea id="sObs" rows="8"></textarea></div></details>
+  <details class="mn"><summary>Exportar dados e relatório</summary><div class="mb">
+    <p class="mu" style="margin:0 0 6px">Os filtros abaixo são os mesmos da tela principal.</p><div id="xFlt"></div>
+    <label for="xResp">Responsável (título do relatório)</label><input id="xResp" type="text" placeholder="Ex.: Ton">
     <div class="row2"><div><label for="xCampo">Filtrar por data de</label><select id="xCampo"><option value="cadastro">Cadastro da empresa</option><option value="contato">Primeiro contato</option><option value="venda">Venda concluída</option></select></div><div><label for="xSit">Situação</label><select id="xSit"></select></div></div>
     <div class="row2"><div><label for="xDe">De</label><input id="xDe" type="date"></div><div><label for="xAte">Até</label><input id="xAte" type="date"></div></div>
-    <div class="acts"><button id="sExp">Exportar CSV</button></div>
+    <div class="acts"><button id="sExp">Exportar CSV</button><button class="p" id="sRel" type="button">Gerar relatório</button></div>
     <div id="sCsvBox" hidden><textarea id="sCsv" rows="5" readonly></textarea><div class="acts"><button class="l" id="sCsvCp">Copiar conteúdo</button></div></div>
   </div></details>
   <div class="mu" id="sMsg" role="status" style="margin-top:10px"></div>
@@ -385,17 +397,163 @@ function localStore(){
 }
 var API=null;try{API=JSON.parse(localStorage.getItem("pb2b_api")||"null");}catch(e){}
 function gs(fn){var a=Array.prototype.slice.call(arguments,1);
+  if(API&&API.google)return gG(fn,a);
   if(!API)return Promise.reject(new Error("sem conexão configurada"));
   return fetch(API.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({k:API.key,fn:fn,a:a})})
     .then(function(r){return r.json();}).then(function(d){if(d.erro)throw new Error(d.erro);return d.r;});}
-function erroApi(e){var m=String(e&&e.message||e||"");
+
+/* ---------- Entrar com Google (planilha criada na conta de quem entra, sem Apps Script) ---------- */
+var GOOGLE_CLIENT_ID="";
+var GCID=GOOGLE_CLIENT_ID||"";try{GCID=GCID||localStorage.getItem("pb2b_gcid")||"";}catch(e){}
+var GST=null;try{GST=JSON.parse(localStorage.getItem("pb2b_g")||"null");}catch(e){}
+var GSCOPE="https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
+var GNOME="IN Company Chilli Beans - Prospecção";
+var G={tok:null,exp:0,sid:null,sidP:null,fila:Promise.resolve()};
+try{var gt=JSON.parse(localStorage.getItem("pb2b_gtok")||"null");if(gt&&gt.exp>Date.now()+60000){G.tok=gt.t;G.exp=gt.exp;}}catch(e){}
+try{G.sid=localStorage.getItem("pb2b_gsid")||null;}catch(e){}
+function gLoad(){return new Promise(function(ok,no){
+  if(window.google&&google.accounts&&google.accounts.oauth2)return ok();
+  var s=document.createElement("script");s.src="https://accounts.google.com/gsi/client";s.async=true;
+  s.onload=function(){ok();};s.onerror=function(){no(new Error("Não foi possível carregar o login do Google. Confira a internet."));};
+  document.head.appendChild(s);});}
+function gToken(interativo){
+  if(G.tok&&Date.now()<G.exp-60000)return Promise.resolve(G.tok);
+  if(!GCID)return Promise.reject(new Error("semcid"));
+  return gLoad().then(function(){return new Promise(function(ok,no){
+    var tc=google.accounts.oauth2.initTokenClient({client_id:GCID,scope:GSCOPE,hint:(GST&&GST.email)||undefined,
+      callback:function(r){
+        if(r&&r.error)return no(new Error(interativo?(r.error_description||r.error):"login"));
+        G.tok=r.access_token;G.exp=Date.now()+(Number(r.expires_in)||3600)*1000;
+        try{localStorage.setItem("pb2b_gtok",JSON.stringify({t:G.tok,exp:G.exp}));}catch(e){}
+        ok(G.tok);},
+      error_callback:function(e){no(new Error(interativo?("Login cancelado ou bloqueado ("+((e&&e.type)||"erro")+"). Permita pop-ups e tente de novo."):"login"));}});
+    tc.requestAccessToken({prompt:interativo&&!(GST&&GST.email)?"select_account":""});});});}
+async function gApi(url,opt){
+  var t;try{t=await gToken(false);}catch(e){throw new Error(e.message==="semcid"?"semcid":"login");}
+  function req(tk){return fetch(url,Object.assign({},opt,{headers:{"Authorization":"Bearer "+tk,"Content-Type":"application/json"}}));}
+  var r=await req(t);
+  if(r.status===401){G.tok=null;try{localStorage.removeItem("pb2b_gtok");}catch(e){}
+    try{t=await gToken(false);}catch(e){throw new Error("login");}r=await req(t);}
+  if(!r.ok){var tx="";try{tx=await r.text();}catch(e){}
+    var msg="";try{msg=JSON.parse(tx).error.message;}catch(e){msg=tx.slice(0,160);}
+    if(r.status===401)throw new Error("login");
+    if(r.status===403&&/has not been used|disabled|accessNotConfigured/i.test(msg))throw new Error("As APIs Google Sheets e Google Drive precisam estar ativadas no projeto do Google Cloud.");
+    throw new Error("Google: "+(msg||r.status));}
+  return r.status===204?null:r.json();}
+var GS="https://sheets.googleapis.com/v4/spreadsheets/";
+function gSerial(t){if(!t||!/^\d{4}-\d{2}-\d{2}$/.test(t))return "";var p=t.split("-");return Math.round((Date.UTC(+p[0],+p[1]-1,+p[2])-Date.UTC(1899,11,30))/86400000);}
+function gProx(o){var l=[];(o.agenda||[]).forEach(function(x){if(x&&x.d&&!x.ok)l.push([x.d,x.a||""]);});
+  if(o.status==="Reunião agendada"&&o.reuniaoData&&!o.reuniaoFeita)l.push([o.reuniaoData,o.reuniaoAcao||"Reunião"]);
+  l.sort(function(a,b){return a[0]<b[0]?-1:a[0]>b[0]?1:0;});
+  return l.length?(l[0][0].split("-").reverse().join("/")+" - "+l[0][1]):"";}
+function gLeg(o){var fr=o.fr||{};
+  var cs=(o.contatos||[]).map(function(c){return[c.nome,c.cargo,c.telefone,c.email,c.linkedin].filter(Boolean).join(" / ");}).join(" | ");
+  var fu=(o.followups||[]).slice().sort(function(a,b){return a.data<b.data?1:-1;})[0];
+  var tem=o.valorVenda!==null&&o.valorVenda!==undefined&&o.valorVenda!==""&&isFinite(Number(o.valorVenda));
+  var valor=tem?Number(o.valorVenda):"";var vendida=o.status==="Concluída";
+  return[o.empresa||"",o.status||"",o.canal||"",gSerial(o.d1),fr.nome||"",fr.canal||"",fr.consultor||"",fr.uf||fr.regiao||"",fr.cidade||"",fr.sap||"",fr.loja||"",fr.telefone||"",cs,
+    vendida?"":(valor||""),vendida?valor:"",vendida?gSerial(o.dataVenda):"",fu?(fu.data+" "+fu.canal):"",gProx(o)];}
+var GCOLS=["Empresa","Status","Origem do 1º contato","1º contato","Franqueado","Canal","Consultor","Estado","Cidade","SAP","Loja","Telefone do franqueado","Contatos","Valor a faturar","Valor faturado","Data da venda","Último follow-up","Próxima ação agendada"];
+function gResumo(){
+  var de='IF($B$3="",DATE(2000,1,1),$B$3)',ate='IF($B$4="",DATE(2100,1,1),$B$4)';
+  var v=[["A1","Resumo - IN Company Chilli Beans"],["A3","Vendas de (data):"],["A4","Vendas até (data):"],["C3","Preencha as datas para filtrar o período. Em branco = todo o período."],
+   ["A6","Valor faturado no período"],["B6",'=SUMIFS(Empresas!Q:Q,Empresas!D:D,"Concluída",Empresas!R:R,">="&'+de+',Empresas!R:R,"<="&'+ate+')'],
+   ["A7","Vendas concluídas no período"],["B7",'=COUNTIFS(Empresas!D:D,"Concluída",Empresas!Q:Q,">=0",Empresas!R:R,">="&'+de+',Empresas!R:R,"<="&'+ate+')'],
+   ["A8","Valor a faturar (em andamento)"],["B8","=SUM(Empresas!P:P)"],
+   ["A9","Aguardando faturamento (concluídas sem valor)"],["B9",'=COUNTIFS(Empresas!D:D,"Concluída",Empresas!Q:Q,"")'],["A10","Empresas por status"]];
+  var st=(typeof STATUS!=="undefined"&&STATUS.length)?STATUS:["Nova empresa","Em follow-up","Em conversa","Reunião agendada","Em orçamento","Concluída","Encerrado sem sucesso"];
+  st.forEach(function(s,i){v.push(["A"+(11+i),s]);v.push(["B"+(11+i),"=COUNTIF(Empresas!D:D,A"+(11+i)+")"]);});
+  var t=11+st.length;v.push(["A"+t,"Total de empresas"]);v.push(["B"+t,"=SUM(B11:B"+(t-1)+")"]);
+  [["D","G","Franqueado"],["H","H","Canal"],["L","I","Consultor"],["P","E","Origem"]].forEach(function(b){
+    v.push([b[0]+"10","Faturado por "+b[2].toLowerCase()]);
+    v.push([b[0]+"11",'=IFERROR(QUERY(Empresas!A:S,"select '+b[1]+', count(A), sum(Q) where D = \'Concluída\' and Q >= 0 and '+b[1]+' <> \'\' group by '+b[1]+' order by sum(Q) desc label '+b[1]+' \''+b[2]+'\', count(A) \'Vendas\', sum(Q) \'Total faturado\'",1),"Sem vendas")']);});
+  return v.map(function(x){return{range:"Resumo!"+x[0],values:[[x[1]]]};});}
+async function gCriar(){
+  var d=await gApi(GS.slice(0,-1),{method:"POST",body:JSON.stringify({properties:{title:GNOME,locale:"pt_BR",timeZone:"America/Sao_Paulo"},
+    sheets:[{properties:{sheetId:1003,title:"Resumo",index:0}},{properties:{sheetId:1001,title:"Empresas",index:1,gridProperties:{frozenRowCount:1}}},{properties:{sheetId:1002,title:"Config",index:2,hidden:true}}]})});
+  var id=d.spreadsheetId;
+  var cor=function(r,g,b){return{red:r,green:g,blue:b};};
+  var fmt=function(sheet,c0,c1,type,pattern){return{repeatCell:{range:{sheetId:sheet,startRowIndex:1,startColumnIndex:c0,endColumnIndex:c1},cell:{userEnteredFormat:{numberFormat:{type:type,pattern:pattern}}},fields:"userEnteredFormat.numberFormat"}};};
+  await gApi(GS+id+":batchUpdate",{method:"POST",body:JSON.stringify({requests:[
+    {repeatCell:{range:{sheetId:1001,startRowIndex:0,endRowIndex:1},cell:{userEnteredFormat:{backgroundColor:cor(.07,.07,.07),textFormat:{bold:true,foregroundColor:cor(1,1,1)}}},fields:"userEnteredFormat(backgroundColor,textFormat)"}},
+    {updateDimensionProperties:{range:{sheetId:1001,dimension:"COLUMNS",startIndex:1,endIndex:2},properties:{hiddenByUser:true},fields:"hiddenByUser"}},
+    {updateDimensionProperties:{range:{sheetId:1001,dimension:"COLUMNS",startIndex:2,endIndex:3},properties:{pixelSize:220},fields:"pixelSize"}},
+    fmt(1001,5,6,"DATE","dd/mm/yyyy"),fmt(1001,17,18,"DATE","dd/mm/yyyy"),fmt(1001,15,17,"CURRENCY","R$ #,##0.00"),
+    {repeatCell:{range:{sheetId:1003,startRowIndex:2,endRowIndex:4,startColumnIndex:1,endColumnIndex:2},cell:{userEnteredFormat:{backgroundColor:cor(1,.95,.8),numberFormat:{type:"DATE",pattern:"dd/mm/yyyy"}}},fields:"userEnteredFormat(backgroundColor,numberFormat)"}},
+    {repeatCell:{range:{sheetId:1003,startRowIndex:5,endRowIndex:6,startColumnIndex:1,endColumnIndex:2},cell:{userEnteredFormat:{numberFormat:{type:"CURRENCY",pattern:"R$ #,##0.00"},textFormat:{bold:true}}},fields:"userEnteredFormat(numberFormat,textFormat)"}},
+    {repeatCell:{range:{sheetId:1003,startRowIndex:7,endRowIndex:8,startColumnIndex:1,endColumnIndex:2},cell:{userEnteredFormat:{numberFormat:{type:"CURRENCY",pattern:"R$ #,##0.00"}}},fields:"userEnteredFormat.numberFormat"}},
+    {repeatCell:{range:{sheetId:1003,startRowIndex:0,endRowIndex:1,startColumnIndex:0,endColumnIndex:1},cell:{userEnteredFormat:{textFormat:{bold:true,fontSize:14}}},fields:"userEnteredFormat.textFormat"}},
+    {updateDimensionProperties:{range:{sheetId:1003,dimension:"COLUMNS",startIndex:0,endIndex:1},properties:{pixelSize:290},fields:"pixelSize"}},
+    {updateDimensionProperties:{range:{sheetId:1003,dimension:"COLUMNS",startIndex:1,endIndex:2},properties:{pixelSize:140},fields:"pixelSize"}}]})});
+  await gApi(GS+id+"/values:batchUpdate",{method:"POST",body:JSON.stringify({valueInputOption:"RAW",data:[
+    {range:"Empresas!A1",values:[["id","dados (JSON)"].concat(GCOLS)]},{range:"Config!A1",values:[["chave","valor"]]}]})});
+  await gApi(GS+id+"/values:batchUpdate",{method:"POST",body:JSON.stringify({valueInputOption:"USER_ENTERED",data:gResumo()})});
+  return id;}
+function gSid(){
+  if(G.sid)return Promise.resolve(G.sid);
+  if(G.sidP)return G.sidP;
+  G.sidP=(async function(){
+    var q=encodeURIComponent("name='"+GNOME+"' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+    var d=await gApi("https://www.googleapis.com/drive/v3/files?q="+q+"&orderBy=createdTime&fields=files(id)");
+    var id=d&&d.files&&d.files.length?d.files[0].id:await gCriar();
+    G.sid=id;try{localStorage.setItem("pb2b_gsid",id);}catch(e){}return id;})();
+  G.sidP.catch(function(){G.sidP=null;});return G.sidP;}
+async function gLinha(id,col,sid,aba){
+  var d=await gApi(GS+sid+"/values/"+aba+"!"+col+"2:"+col);var v=(d&&d.values)||[];
+  for(var i=0;i<v.length;i++)if(String(v[i][0])===String(id))return i+2;
+  return 0;}
+async function gAll(){
+  var sid=await gSid();
+  var d=await gApi(GS+sid+"/values:batchGet?ranges=Empresas!A2:B&ranges=Config!A2:B&valueRenderOption=UNFORMATTED_VALUE");
+  var items=[],cf={};
+  ((d.valueRanges[0]&&d.valueRanges[0].values)||[]).forEach(function(r){if(r[0]&&r[1]){try{var o=JSON.parse(r[1]);o.id=String(r[0]);items.push(o);}catch(e){}}});
+  ((d.valueRanges[1]&&d.valueRanges[1].values)||[]).forEach(function(r){if(r[0]){try{cf[r[0]]=JSON.parse(r[1]);}catch(e){}}});
+  return{items:items,senha:cf.senha||null,app:cf.app||null,url:"https://docs.google.com/spreadsheets/d/"+sid};}
+function gFila(f){var p=G.fila.then(f);G.fila=p.catch(function(){});return p;}
+function gG(fn,a){
+  if(fn==="getAll")return gAll();
+  if(fn==="testar")return gSid().then(function(){return{ok:true,planilha:true};});
+  if(fn==="enviarCodigo")return Promise.reject(new Error("sem envio automático"));
+  if(fn==="saveItem")return gFila(async function(){var o=a[0],sid=await gSid();
+    var row=await gLinha(o.id,"A",sid,"Empresas");
+    if(!row){var d=await gApi(GS+sid+"/values/Empresas!A2:A");row=((d&&d.values)||[]).length+2;}
+    var linha=[String(o.id),JSON.stringify(o)].concat(gLeg(o));
+    await gApi(GS+sid+"/values/Empresas!A"+row+":T"+row+"?valueInputOption=RAW",{method:"PUT",body:JSON.stringify({values:[linha]})});return true;});
+  if(fn==="removeItem")return gFila(async function(){var sid=await gSid();var row=await gLinha(a[0],"A",sid,"Empresas");
+    if(row)await gApi(GS+sid+":batchUpdate",{method:"POST",body:JSON.stringify({requests:[{deleteDimension:{range:{sheetId:1001,dimension:"ROWS",startIndex:row-1,endIndex:row}}}]})});return true;});
+  if(fn==="saveCfg")return gFila(async function(){var sid=await gSid();var row=await gLinha(a[0],"A",sid,"Config");
+    if(!row){var d=await gApi(GS+sid+"/values/Config!A2:A");row=((d&&d.values)||[]).length+2;}
+    await gApi(GS+sid+"/values/Config!A"+row+":B"+row+"?valueInputOption=RAW",{method:"PUT",body:JSON.stringify({values:[[a[0],JSON.stringify(a[1])]]})});return true;});
+  return Promise.reject(new Error("função desconhecida"));}
+async function gEntrar(btn,errEl){
+  var rot=btn.textContent;errEl.textContent="";
+  if(!GCID){errEl.textContent="Falta o ID do cliente Google. Cole-o em Configurações > Planilha do Google > Avançado (veja o LEIA-ME).";return;}
+  btn.disabled=true;btn.textContent="Abrindo o Google…";
+  try{
+    G.tok=null;var t=await gToken(true);
+    var r=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+t}});var u=r.ok?await r.json():{};
+    var novo=!GST||GST.email!==u.email;
+    GST={email:u.email||""};G.sid=null;if(novo){try{localStorage.removeItem("pb2b_gsid");}catch(e){}}
+    try{localStorage.setItem("pb2b_g",JSON.stringify(GST));}catch(e){}
+    btn.textContent="Conectado ✓";location.reload();
+  }catch(e){btn.disabled=false;btn.textContent=rot;errEl.textContent=String(e&&e.message||e);}}
+function gSair(){try{["pb2b_g","pb2b_gtok","pb2b_gsid"].forEach(function(k){localStorage.removeItem(k);});}catch(e){}
+  try{if(G.tok&&window.google&&google.accounts)google.accounts.oauth2.revoke(G.tok,function(){});}catch(e){}
+  location.reload();}
+if(GST&&GCID&&!(API&&API.google)){API={google:true,email:GST.email};}
+
+function erroApi(e){var m0=String(e&&e.message||e||"");
+  if(m0==="login")return "a sessão do Google expirou. Toque em Entrar com Google para continuar.";
+  if(m0==="semcid")return "falta o ID do cliente Google (Configurações > Planilha do Google > Avançado).";
+  if(API&&API.google)return m0||"erro desconhecido.";
+  var m=m0;
   if(m==="chave")return "chave de acesso incorreta (Configurações > Planilha do Google > Endereço e chave).";
   if(/Failed to fetch|NetworkError|Load failed/i.test(m))return "não alcançou o Apps Script. Confira a internet e se a implantação está com acesso 'Qualquer pessoa'.";
   if(/Unexpected token|JSON/i.test(m))return "o Apps Script respondeu uma página de login. Em Implantar > Gerenciar implantações, use 'Quem pode acessar: Qualquer pessoa' e crie uma Nova versão.";
   return m||"erro desconhecido.";}
-function abrirApi(){$("#aUrl").value=API?API.url:"";$("#aKey").value=API?API.key:"";$("#aErr").textContent="";$("#dlgA").showModal();}
+function abrirApi(){$("#aUrl").value=(API&&API.url)||"";$("#aKey").value=(API&&API.key)||"";$("#aErr").textContent="";$("#dlgA").showModal();}
 var pend=0;
-function persist(p){pend++;return p.then(function(){pend--;if(!pend)$("#modo").textContent="";}).catch(function(e){pend--;$("#modo").textContent="Não foi possível salvar na planilha: "+erroApi(e);});}
+function persist(p){pend++;return p.then(function(){pend--;if(!pend)$("#modo").textContent="";}).catch(function(e){pend--;$("#modo").textContent="Não foi possível salvar na planilha: "+erroApi(e);if(e&&e.message==="login")abrirG();});}
 async function carregar(){
   var d=await gs("getAll");
   items=d.items||[];cfg=d.senha||null;
@@ -412,16 +570,16 @@ async function init(){
       setCfg:function(c){cfg=c;return persist(gs("saveCfg","senha",c));},
       setApp:function(c){appCfg=c;return persist(gs("saveCfg","app",c));}};
     $("#modo").textContent="Carregando…";
-    try{await carregar();$("#modo").textContent="";}catch(e){$("#modo").textContent="Não foi possível carregar a planilha: "+erroApi(e);if(e.message==="chave")abrirApi();}
+    try{await carregar();$("#modo").textContent="";}catch(e){$("#modo").textContent="Não foi possível carregar a planilha: "+erroApi(e);if(e.message==="chave")abrirApi();else if(e.message==="login")abrirG();}
     document.addEventListener("visibilitychange",function(){
       var ae=document.activeElement&&document.activeElement.tagName;
       if(document.visibilityState==="visible"&&!pend&&!document.querySelector("dialog[open]")&&ae!=="INPUT"&&ae!=="TEXTAREA"&&ae!=="SELECT")carregar().catch(function(){});});
-  }else{store=localStore();$("#modo").textContent="Sem conexão com a planilha: dados só neste aparelho.";render();if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",abrirApi);else abrirApi();}
+  }else{store=localStore();$("#modo").textContent="Sem conexão com a planilha: dados só neste aparelho.";render();if(GCID&&!sessionStorage.getItem("pb2b_gask")){try{sessionStorage.setItem("pb2b_gask","1");}catch(e){}setTimeout(function(){abrirG();},3100);}}
 }
 function save(it){if(store)store.save(it);}
 
 /* ---------- listas ---------- */
-var F={canal:"",fonte:"",consultor:"",uf:"",cidade:"",vmin:"",vmax:"",ordem:"",pc:"",d1De:"",d1Ate:""};
+var F={canal:"",fonte:"",consultor:"",uf:"",cidade:"",caminho:"",vmin:"",vmax:"",ordem:"",pc:"",d1De:"",d1Ate:""};
 function numf(t){return parseFloat(String(t).replace(/[^\d,.-]/g,"").replace(/\./g,"").replace(",","."))||0;}
 function nFiltros(){var n=0;for(var k in F)if(F[k]!=="")n++;return n;}
 function passaF(it){
@@ -431,6 +589,7 @@ function passaF(it){
   if(F.consultor&&fr.consultor!==F.consultor)return false;
   if(F.uf&&(fr.uf||ufDe(fr.regiao))!==F.uf)return false;
   if(F.cidade&&fr.cidade!==F.cidade)return false;
+  if(F.caminho==="pre"&&!ehPre(it))return false;if(F.caminho==="acao"&&!ehAcao(it))return false;if(F.caminho==="prosp"&&(it.caminho||ehPre(it)))return false;
   var v=Number(it.valorVenda)||0;
   if(F.vmin!==""&&v<numf(F.vmin))return false;
   if(F.vmax!==""&&v>numf(F.vmax))return false;
@@ -538,7 +697,8 @@ function montarFiltros(){
   g.append(lab("Consultor",sel("consultor",[["","Todos"]])));
   g.append(lab("Estado",sel("uf",[["","Todos"]].concat(UFS.map(function(u){return[u[0],u[1]+" ("+u[0]+")"];})))));
   g.append(lab("Cidade",sel("cidade",[["","Todas"]])));
-  B.append(g,h("div",{class:"acts"},h("button",{class:"l",text:"Limpar filtros",on:{click:function(){for(var k in F)F[k]="";["fonte","uf","cidade"].forEach(function(k){fl[k].value="";});render();}}})));
+  g.append(lab("Caminho",sel("caminho",[["","Todos"],["pre","Pré-compra"],["acao","Ação na empresa"],["prosp","Em prospecção"]])));
+  B.append(g,h("div",{class:"acts"},h("button",{class:"l",text:"Limpar filtros",on:{click:function(){for(var k in F)F[k]="";["fonte","uf","cidade","caminho"].forEach(function(k){fl[k].value="";});render();}}})));
 }
 function fltOpcoes(){
   if(!fl.chips)return;
@@ -552,11 +712,9 @@ function fltOpcoes(){
 function render(){
   norm();topo();fltOpcoes();
   var T=$("#tabs");T.textContent="";
-  TABS.forEach(function(t){T.append(h("button",{role:"tab","aria-selected":tab===t[0]?"true":"false",text:t[1]+" ("+contar(t[0])+")"+(t[0]==="agenda"&&agAlertas(items).acoes?" ⚠":""),on:{click:function(){tab=t[0];render();}}}));});
+  TABS.forEach(function(t){T.append(h("button",{role:"tab","aria-selected":tab===t[0]?"true":"false",text:t[1]+" ("+contar(t[0])+")",on:{click:function(){tab=t[0];render();}}}));});
   var L=$("#lista");L.textContent="";
   var AL=agAlertas(items);
-  if(AL.acoes&&tab!=="agenda")L.append(h("div",{class:"alertb",role:"alert"},h("span",{text:"⚠ Ações agendadas para hoje ou atrasadas: "+AL.acoes+" em "+AL.empresas+(AL.empresas===1?" empresa":" empresas")+". Conferir."}),h("button",{class:"p",text:"Ver agendadas",on:{click:function(){tab="agenda";render();}}})));
-  avisarAgenda(AL);
   var v=visiveis();
   var R=$("#res");R.textContent="";
   if(tab==="vendas")R.textContent=v.length+(v.length===1?" venda":" vendas")+" no período";
@@ -660,14 +818,16 @@ function selo(it){
 }
 function card(it){
   var ab=!!open[it.id+"x"];
-  var el=h("div",{class:"item"},
-    h("div",{class:"hd"},selo(it),agSelo(it),h("strong",{text:it.empresa}),
-      h("button",{class:"l","aria-expanded":ab?"true":"false","aria-label":(ab?"Encolher ":"Abrir ")+it.empresa,text:ab?"Encolher":"Abrir",on:{click:function(){open[it.id+"x"]=!ab;render();}}})));
+  function alterna(){Object.keys(open).forEach(function(k){if(k.slice(0,-1)!==it.id)delete open[k];});open[it.id+"x"]=!ab;render();
+    if(!ab)setTimeout(function(){var e=document.querySelector('[data-id="'+it.id+'"]');if(e&&e.scrollIntoView)e.scrollIntoView({block:"nearest",behavior:"smooth"});},60);}
+  var el=h("div",{class:"item","data-id":it.id},
+    h("div",{class:"hd",role:"button",tabindex:"0","aria-expanded":ab?"true":"false","aria-label":(ab?"Encolher ":"Abrir ")+it.empresa,style:"cursor:pointer",on:{click:alterna,keydown:function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();alterna();}}}},
+      selo(it),agSelo(it),h("strong",{text:it.empresa}),h("span",{class:"mu","aria-hidden":"true",text:ab?"▲":"▼"})));
   if(!ab)return el;
   var st=h("select",{"aria-label":"Status de "+it.empresa,on:{change:function(e){
     it.status=e.target.value;it.statusDesde=hoje();if(it.status==="Concluída")it.dataVenda=hoje();save(it);
     if(it.status==="Reunião agendada")abrir(it);}}});
-  STATUS.forEach(function(x){var o=h("option",{value:x,text:x});if(x===it.status)o.selected=true;st.append(o);});
+  STATUS.forEach(function(x){var bl=x==="Em orçamento"&&!ehPre(it)&&it.status!==x;var o=h("option",{value:x,text:x+(bl?" (só pré-compra)":"")});if(bl)o.disabled=true;if(x===it.status)o.selected=true;st.append(o);});
   var u=ultimo(it),a=atraso(it),fup=null;
   if(a!==null&&it.status!=="Em follow-up"){var d=proxima(it);
     fup=h("div",{class:"fup"+(a<0?" fut":""),text:a>0?"Follow-up atrasado há "+plural(a,"dia"):a===0?"Follow-up hoje":"Próximo follow-up em "+plural(-a,"dia")+" ("+fmt(ymd(d))+")"});}
@@ -682,6 +842,7 @@ function card(it){
     h("div",{class:"row mu",text:u?"Último follow-up: "+fmt(u.data)+" · "+u.canal:"Nenhum follow-up registrado"}),
     it.status==="Em follow-up"?cadBloco(it):(it.status==="Nova empresa"?primeiroBloco(it):null),
     fup,
+    negBloco(it),
     agBloco(it),
     ctBox(it));
   el.append(
@@ -833,6 +994,198 @@ function gerarCodigo(){
 }
 function normCod(c){return String(c||"").toUpperCase().replace(/[^A-Z0-9]/g,"");}
 
+/* ---------- caminho, observações, atividades e relatório ---------- */
+var OBS0=["Venda fechada","Vendido na ação","Em negociação final","Em follow-up","A definir franqueado","Programada","Declinado","Sem retorno"];
+function obsLista(){return(appCfg.obs&&appCfg.obs.length)?appCfg.obs:OBS0;}
+var CAM=[["","Em prospecção"],["pre","Pré-compra"],["acao","Ação na empresa (IN Company)"]];
+function ehPre(it){return it.caminho==="pre"||(!it.caminho&&it.status==="Em orçamento");}
+function ehAcao(it){return it.caminho==="acao";}
+function negBloco(it){
+  var sc=h("select",{"aria-label":"Caminho de "+it.empresa});CAM.forEach(function(c){sc.append(h("option",{value:c[0],text:c[1]}));});sc.value=it.caminho||"";
+  sc.addEventListener("change",function(){it.caminho=sc.value;if(it.caminho!=="pre"&&it.status==="Em orçamento"){it.status="Em conversa";it.statusDesde=hoje();}save(it);});
+  var so=h("select",{"aria-label":"Observação do resultado de "+it.empresa});so.append(h("option",{value:"",text:"—"}));
+  var ol=obsLista().slice();if(it.obs&&ol.indexOf(it.obs)<0)ol.push(it.obs);ol.forEach(function(o){so.append(h("option",{value:o,text:o}));});so.value=it.obs||"";
+  so.addEventListener("change",function(){it.obs=so.value;save(it);});
+  var extra=null;
+  if(it.caminho==="pre"){var q=h("input",{type:"number",min:"0",inputmode:"numeric","aria-label":"Quantidade de produtos de "+it.empresa});q.value=it.qtd||"";q.addEventListener("change",function(){it.qtd=parseInt(q.value,10)||0;save(it);});extra=h("label",{},"Quantidade de produtos",q);}
+  if(it.caminho==="acao"){var op=h("select",{"aria-label":"Opto em "+it.empresa});[["","A definir"],["com","Com opto"],["sem","Sem opto"]].forEach(function(x){op.append(h("option",{value:x[0],text:x[1]}));});op.value=it.opto||"";op.addEventListener("change",function(){it.opto=op.value;save(it);});extra=h("label",{},"Ação com ou sem opto",op);}
+  return h("div",{class:"neg",style:"margin-top:10px"},h("div",{class:"row2"},h("div",{},h("label",{},"Caminho",sc)),extra?h("div",{},extra):null,h("div",{},h("label",{},"Observação do resultado",so))));
+}
+/* atividades extras */
+var AT_MED=["Reunião de franqueados","Mentoria","Atendimento externo"];
+var AT_SIT=["Realizada","Em execução","Concluída","Programada"];
+function ativs(){return Array.isArray(appCfg.ativ)?appCfg.ativ:[];}
+function salvarAtiv(l){appCfg.ativ=l;try{store.setApp(appCfg);}catch(e){}}
+function listarAtiv(){
+  var B=$("#atLista");B.textContent="";var l=ativs().slice().sort(function(a,b){return(b.data||"")<(a.data||"")?-1:1;});
+  var tot={};AT_MED.forEach(function(t){tot[t]=0;});l.forEach(function(a){if(tot[a.tipo]!==undefined)tot[a.tipo]+=Number(a.qtd)||0;});
+  B.append(h("div",{class:"mu",style:"margin:0 0 8px",text:AT_MED.map(function(t){return t+": "+tot[t];}).join(" · ")}));
+  if(!l.length)B.append(h("div",{class:"mu",text:"Nenhuma atividade registrada."}));
+  l.forEach(function(a){B.append(h("div",{class:"log"},h("span",{text:(a.data?fmt(a.data)+" · ":"")+(AT_MED.indexOf(a.tipo)>=0?a.tipo+" × "+(a.qtd||1):(a.titulo||"Atividade")+" · "+(a.sit||""))+(a.desc?" · "+a.desc:"")}),
+    h("button",{class:"l",text:"Remover","aria-label":"Remover atividade",on:{click:function(){confirmar("Remover esta atividade?",function(){salvarAtiv(ativs().filter(function(x){return x.id!==a.id;}));listarAtiv();});}}})));});
+}
+function atCampos(){var m=AT_MED.indexOf($("#atTipo").value)>=0;$("#atQtdG").style.display=m?"block":"none";$("#atTitG").style.display=m?"none":"block";$("#atSitG").style.display=m?"none":"block";}
+function abrirAtiv(){$("#atData").value=hoje();$("#atQtd").value="1";$("#atTit").value="";$("#atDesc").value="";$("#atErr").textContent="";atCampos();listarAtiv();$("#dlgAt").showModal();}
+/* filtros do export (mesmos filtros da tela principal) */
+var FX={canal:"",fonte:"",consultor:"",uf:"",cidade:"",caminho:""},flx={};
+function passaFX(it){var fr=it.fr||{};
+  if(FX.canal&&fr.canal!==FX.canal)return false;if(FX.fonte&&it.canal!==FX.fonte)return false;if(FX.consultor&&fr.consultor!==FX.consultor)return false;
+  if(FX.uf&&(fr.uf||ufDe(fr.regiao))!==FX.uf)return false;if(FX.cidade&&fr.cidade!==FX.cidade)return false;
+  if(FX.caminho==="pre"&&!ehPre(it))return false;if(FX.caminho==="acao"&&!ehAcao(it))return false;if(FX.caminho==="prosp"&&(it.caminho||ehPre(it)))return false;return true;}
+function montarFX(){
+  var B=$("#xFlt");B.textContent="";FX={canal:"",fonte:"",consultor:"",uf:"",cidade:"",caminho:""};
+  function lab(t,el){return h("label",{class:"fl"},t,el);}
+  function sel(key,opts){var s=h("select",{});opts.forEach(function(o){s.append(h("option",{value:o[0],text:o[1]}));});s.addEventListener("change",function(){FX[key]=s.value;});flx[key]=s;return s;}
+  var chips=h("div",{class:"chips"});flx.chips=[];
+  ["Mono","Mega","Multi"].forEach(function(c){var b=h("button",{class:"l chip",type:"button",text:c,"aria-pressed":"false",on:{click:function(){FX.canal=FX.canal===c?"":c;flx.chips.forEach(function(x){x.setAttribute("aria-pressed",FX.canal===x.dataset.c?"true":"false");});}}});b.dataset.c=c;flx.chips.push(b);chips.append(b);});
+  B.append(h("div",{class:"fl"},h("span",{text:"Canal"}),chips));
+  var g=h("div",{class:"fgrid"});
+  g.append(lab("Origem",sel("fonte",[["","Todas"]].concat(CANAIS.map(function(c){return[c,c];})))));
+  var cs=[["","Todos"]].concat(consultores().map(function(c){return[c,c];}));g.append(lab("Consultor",sel("consultor",cs)));
+  g.append(lab("Estado",sel("uf",[["","Todos"]].concat(UFS.map(function(u){return[u[0],u[1]+" ("+u[0]+")"];})))));
+  var o={};items.forEach(function(it){var f=it.fr||{};if(f.cidade)o[f.cidade]=1;});
+  g.append(lab("Cidade",sel("cidade",[["","Todas"]].concat(Object.keys(o).sort(function(a,b){return a.localeCompare(b,"pt-BR");}).map(function(c){return[c,c];})))));
+  g.append(lab("Caminho",sel("caminho",[["","Todos"],["pre","Pré-compra"],["acao","Ação na empresa"],["prosp","Em prospecção"]])));
+  B.append(g);
+}
+/* relatório */
+function tv(it){return it.valorVenda!==null&&it.valorVenda!==undefined&&it.valorVenda!==""&&isFinite(Number(it.valorVenda));}
+function M(x){return{v:x,f:"m"};}function Pc(x){return{v:x,f:"p"};}function Nn(x){return{v:x,f:"n"};}
+function fd(s){var p=String(s||"").split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:"";}
+function listaE(a){return a.length<2?a.join(""):a.slice(0,-1).join(", ")+" e "+a[a.length-1];}
+function plu(n,s,p){return n+" "+(n===1?s:p);}
+function relDados(lista,o){
+  var R=[],feitos=lista.filter(function(it){return it.status!=="Nova empresa"||it.d1;});
+  var pre=feitos.filter(ehPre),ac=feitos.filter(function(it){return ehAcao(it)&&!ehPre(it);}),pr=feitos.filter(function(it){return!ehPre(it)&&!ehAcao(it);});
+  var tot=feitos.length||0,pct=function(n){return Pc(tot?n/tot:0);};
+  R.push({k:"title",c:["In Company Chilli - "+(o.resp||"Relatório")+" (resultados até "+fd(o.ate||hoje())+")"]});R.push({k:"blank"});
+  R.push({k:"sec",c:["1. Total de contatos"]});R.push({k:"head",c:["Indicador","Quantidade"]});R.push({k:"totb",c:["Total de contatos feitos",Nn(tot)]});R.push({k:"blank"});
+  R.push({k:"sec",c:["2. Contatos por caminho"]});R.push({k:"head",c:["Caminho","Contatos","% do total","Empresas / observação"]});
+  var vp=function(a){return a.filter(tv).reduce(function(s,x){return s+Number(x.valorVenda);},0);};
+  var fe=pre.filter(function(x){return x.status==="Concluída";}),de=pre.filter(function(x){return x.status==="Encerrado sem sucesso";}),fu=pre.filter(function(x){return x.status!=="Concluída"&&x.status!=="Encerrado sem sucesso";});
+  var op=[];if(fe.length)op.push(plu(fe.length,"fechado","fechados")+" ("+brl(vp(fe))+")");if(fu.length)op.push(fu.length+" em follow-up ("+brl(vp(fu))+")");if(de.length)op.push(plu(de.length,"declinado","declinados")+" ("+brl(vp(de))+")");
+  R.push({k:"row",c:["Pré-compra (orçamento de compra no comercial)",Nn(pre.length),pct(pre.length),listaE(op)]});
+  R.push({k:"row",c:["Ação na empresa (IN Company)",Nn(ac.length),pct(ac.length),ac.map(function(x){return x.empresa;}).join(", ")]});
+  R.push({k:"row",c:["Em prospecção (sem retorno ainda)",Nn(pr.length),pct(pr.length),pr.length?"Seguem na cadência de contatos":""]});
+  R.push({k:"totb",c:["Total",Nn(tot),Pc(tot?1:0),""]});R.push({k:"blank"});
+  var vend=lista.filter(function(x){return x.status==="Concluída"&&tv(x);}),ag=lista.filter(aguardaFat);
+  R.push({k:"sec",c:["3. Valor vendido"]});R.push({k:"head",c:["Venda","Valor (R$)","Observação"],sp:true});
+  vend.forEach(function(x){R.push({k:"row",sp:true,c:[(ehAcao(x)?"Ação presencial":ehPre(x)?"Pré-compra":"Venda")+" — "+x.empresa,M(Number(x.valorVenda)),x.obs||(ehAcao(x)?"Vendido na ação":"Venda fechada")]});});
+  if(!vend.length)R.push({k:"row",sp:true,c:["Nenhuma venda no período",M(0),""]});
+  var tp=[];if(vend.some(ehPre))tp.push("Pré-compra");if(vend.some(ehAcao))tp.push("ações presenciais");
+  R.push({k:"totg",sp:true,c:["Total vendido",M(vp(vend)),tp.join(" + ")]});
+  if(ag.length)R.push({k:"note",c:["Aguardando faturamento (fora do total): "+ag.map(function(x){return x.empresa;}).join(", ")]});
+  R.push({k:"blank"});
+  var orc=lista.filter(function(x){return ehPre(x)&&(x.status==="Em orçamento"||x.status==="Concluída"||x.status==="Encerrado sem sucesso")&&(tv(x)&&Number(x.valorVenda)>0||Number(x.qtd)>0||x.status==="Em orçamento");});
+  var sit=function(x){return x.status==="Concluída"?"Fechado":x.status==="Encerrado sem sucesso"?"Declinado":"Em follow-up";};
+  var ord={"Fechado":0,"Em follow-up":1,"Declinado":2};orc.sort(function(a,b){return ord[sit(a)]-ord[sit(b)]||(Number(b.valorVenda)||0)-(Number(a.valorVenda)||0);});
+  R.push({k:"sec",c:["Orçamentos de pré-compra"]});R.push({k:"head",c:["Orçamento","Quantidade de produtos","Situação","Valor (R$)"]});
+  orc.forEach(function(x){R.push({k:sit(x)==="Declinado"?"rowd":"row",c:[x.empresa,Nn(Number(x.qtd)||0),sit(x),M(Number(x.valorVenda)||0)]});});
+  if(!orc.length)R.push({k:"row",c:["Nenhum orçamento no período","","",""]});
+  var sm=function(f){var a=orc.filter(f);return[a.reduce(function(s,x){return s+(Number(x.qtd)||0);},0),a.reduce(function(s,x){return s+(Number(x.valorVenda)||0);},0)];};
+  var t1=sm(function(){return true;}),t2=sm(function(x){return sit(x)==="Em follow-up";}),t3=sm(function(x){return sit(x)==="Fechado";}),t4=sm(function(x){return sit(x)==="Declinado";});
+  R.push({k:"totb",c:["Total orçado",Nn(t1[0]),"",M(t1[1])]});R.push({k:"totb",c:["Em follow-up",Nn(t2[0]),"",M(t2[1])]});R.push({k:"totb",c:["Fechado",Nn(t3[0]),"",M(t3[1])]});R.push({k:"rowd",c:["Declinado (informativo)",Nn(t4[0]),"",M(t4[1])]});R.push({k:"blank"});
+  var prog=lista.filter(function(x){return ehAcao(x)&&x.status!=="Concluída"&&x.status!=="Encerrado sem sucesso";});
+  R.push({k:"sec",c:["4. Ações programadas"]});R.push({k:"head",c:["Empresa","Tipo de ação","Quando","Situação"]});
+  prog.forEach(function(x){var ds=agPend(x).map(function(a){return a.d;}).filter(Boolean).sort();var q=ds.map(function(d){return fmt(d);}).join(", ");
+    R.push({k:"row",c:[x.empresa,"Ação na empresa"+(x.opto==="com"?", com opto":x.opto==="sem"?", sem opto":""),q||"A definir",x.obs||""]});});
+  if(!prog.length)R.push({k:"row",c:["Nenhuma ação programada","","",""]});
+  R.push({k:"totb",c:["Total de ações programadas",Nn(prog.length),"",""]});R.push({k:"blank"});
+  R.push({k:"sec",c:["5. Outras atividades do trabalho"]});R.push({k:"head",c:["Atividade","Quantidade","Situação","Descrição"]});
+  var real=lista.filter(function(x){return ehAcao(x)&&x.status==="Concluída";});
+  R.push({k:"row",c:["Ações na empresa realizadas",Nn(real.length),"Realizadas",real.map(function(x){return x.empresa;}).join(", ")+(real.length?" — "+brl(vp(real))+" vendidos":"")]});
+  var at=ativs().filter(function(a){return(!o.de||!a.data||a.data>=o.de)&&(!o.ate||!a.data||a.data<=o.ate);});
+  AT_MED.forEach(function(t){var q=at.filter(function(a){return a.tipo===t;}).reduce(function(s,a){return s+(Number(a.qtd)||1);},0);R.push({k:"row",c:[t+(t==="Reunião de franqueados"?" (orientação)":""),Nn(q),"Realizadas",""]});});
+  at.filter(function(a){return AT_MED.indexOf(a.tipo)<0;}).sort(function(a,b){return(a.data||"")<(b.data||"")?-1:1;}).forEach(function(a){R.push({k:"row",c:[a.titulo||"Atividade","",a.sit||"",a.desc||""]});});
+  return R;}
+function cel(c){if(c&&typeof c==="object"){if(c.f==="m")return brl(c.v);if(c.f==="p")return Math.round(c.v*100)+"%";return String(c.v);}return c==null?"":String(c);}
+function celR(c){return c&&typeof c==="object";}
+var RCOL=[380,150,170,420];
+function relHTML(R,inline){
+  var th=inline?'style="background:#1F3864;color:#fff;font-weight:bold;text-align:center;border:1px solid #1F3864;padding:4px 8px"':'class="rh"';
+  var o='<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><colgroup>'+RCOL.map(function(w){return'<col style="width:'+w+'px">';}).join("")+"</colgroup>";
+  R.forEach(function(r){
+    if(r.k==="blank"){o+='<tr><td colspan="4" style="height:12px"></td></tr>';return;}
+    if(r.k==="title"){o+='<tr><td colspan="4" style="font-size:18px;font-weight:bold;padding:4px 0">'+esc(cel(r.c[0]))+"</td></tr>";return;}
+    if(r.k==="sec"){o+='<tr><td colspan="4" style="font-weight:bold;font-size:14px;padding:4px 0">'+esc(cel(r.c[0]))+"</td></tr>";return;}
+    if(r.k==="note"){o+='<tr><td colspan="4" style="color:#666;font-style:italic;padding:2px 0">'+esc(cel(r.c[0]))+"</td></tr>";return;}
+    o+="<tr>";r.c.forEach(function(c,i){var last=i===r.c.length-1,cs=(last&&(r.sp||r.c.length<4&&r.k!=="totb"&&r.k!=="head"&&r.c.length>2))?4-i:1;
+      if(r.k==="head")o+="<td "+th+(cs>1?' colspan="'+cs+'"':"")+">"+esc(cel(c))+"</td>";
+      else{var st="border:1px solid #bbb;padding:3px 8px;"+(celR(c)?"text-align:right;":"");
+        if(r.k==="totb")st+="font-weight:bold;background:#D9E1F2;";if(r.k==="totg")st+="font-weight:bold;background:#E2EFDA;"+(i===1?"color:#1b7a3a;":"");if(r.k==="rowd")st+="color:#C00000;";
+        o+='<td style="'+st+'"'+(cs>1?' colspan="'+cs+'"':"")+">"+esc(cel(c))+"</td>";}});
+    o+="</tr>";});
+  return o+"</table>";}
+function esc(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function relCSV(R){var q=function(v){return'"'+String(v).replace(/"/g,'""')+'"';};
+  return"﻿"+R.map(function(r){if(r.k==="blank")return"";return r.c.map(function(c){return q(celR(c)?(c.f==="p"?Math.round(c.v*100)+"%":String(c.v).replace(".",",")):cel(c));}).join(";");}).join("\r\n");}
+/* imagem (BMP/PNG) desenhada no canvas */
+function relCanvas(R,esc2){
+  var S=esc2||1.5,W=RCOL.reduce(function(a,b){return a+b;},0)+40,pad=20,fs=14,lh=19;
+  var c=document.createElement("canvas"),x=c.getContext("2d");
+  function fnt(b,sz){return(b?"bold ":"")+(sz||fs)+"px Arial, Helvetica, sans-serif";}
+  function lines(t,w,f){x.font=f;var ws=String(t).split(/\s+/),l=[],cur="";ws.forEach(function(p){var tt=cur?cur+" "+p:p;if(x.measureText(tt).width>w&&cur){l.push(cur);cur=p;}else cur=tt;});if(cur||!l.length)l.push(cur);return l;}
+  var xs=[pad];RCOL.forEach(function(w,i){xs.push(xs[i]+w);});
+  var plan=[],y=pad;
+  R.forEach(function(r){
+    if(r.k==="blank"){plan.push({r:r,y:y,h:14});y+=14;return;}
+    if(r.k==="title"||r.k==="sec"||r.k==="note"){var hh=r.k==="title"?32:26;plan.push({r:r,y:y,h:hh});y+=hh;return;}
+    var cells=[],mx=1;r.c.forEach(function(cv,i){var last=i===r.c.length-1,cs=(last&&(r.sp||r.c.length<4&&r.k!=="totb"&&r.k!=="head"&&r.c.length>2))?4-i:1;
+      var w=xs[i+cs]-xs[i]-14,ln=lines(cel(cv),w,fnt(r.k==="head"||r.k==="totb"||r.k==="totg"));if(ln.length>mx)mx=ln.length;cells.push({i:i,cs:cs,ln:ln,n:celR(cv)});});
+    var hh=mx*lh+8;plan.push({r:r,y:y,h:hh,cells:cells});y+=hh;});
+  var H=y+pad;c.width=Math.round(W*S);c.height=Math.round(H*S);x.scale(S,S);x.fillStyle="#fff";x.fillRect(0,0,W,H);x.textBaseline="middle";
+  plan.forEach(function(p){var r=p.r;
+    if(r.k==="blank")return;
+    if(r.k==="title"){x.fillStyle="#111";x.font=fnt(true,20);x.textAlign="left";x.fillText(cel(r.c[0]),pad,p.y+p.h/2);return;}
+    if(r.k==="sec"){x.fillStyle="#111";x.font=fnt(true,15);x.textAlign="left";x.fillText(cel(r.c[0]),pad,p.y+p.h/2);return;}
+    if(r.k==="note"){x.fillStyle="#666";x.font="italic "+fnt(false,13);x.textAlign="left";x.fillText(cel(r.c[0]),pad,p.y+p.h/2);return;}
+    p.cells.forEach(function(cl){var x0=xs[cl.i],w=xs[cl.i+cl.cs]-x0,bg="#fff",fg="#111",b=false;
+      if(r.k==="head"){bg="#1F3864";fg="#fff";b=true;}if(r.k==="totb"){bg="#D9E1F2";b=true;}if(r.k==="totg"){bg="#E2EFDA";b=true;if(cl.i===1)fg="#1b7a3a";}if(r.k==="rowd")fg="#C00000";
+      x.fillStyle=bg;x.fillRect(x0,p.y,w,p.h);x.strokeStyle=r.k==="head"?"#1F3864":"#bbb";x.lineWidth=1;x.strokeRect(x0+.5,p.y+.5,w-1,p.h-1);
+      x.fillStyle=fg;x.font=fnt(b);x.textAlign=r.k==="head"?"center":cl.n?"right":"left";var tx=r.k==="head"?x0+w/2:cl.n?x0+w-7:x0+7;
+      var top=p.y+(p.h-cl.ln.length*lh)/2+lh/2;cl.ln.forEach(function(t,j){x.fillText(t,tx,top+j*lh);});});});
+  return c;}
+function bmpDe(c){
+  var w=c.width,h0=c.height,d=c.getContext("2d").getImageData(0,0,w,h0).data,rs=Math.ceil(w*3/4)*4,sz=54+rs*h0,buf=new ArrayBuffer(sz),v=new DataView(buf),u=new Uint8Array(buf);
+  v.setUint8(0,66);v.setUint8(1,77);v.setUint32(2,sz,true);v.setUint32(10,54,true);v.setUint32(14,40,true);v.setInt32(18,w,true);v.setInt32(22,h0,true);v.setUint16(26,1,true);v.setUint16(28,24,true);v.setUint32(34,rs*h0,true);v.setInt32(38,2835,true);v.setInt32(42,2835,true);
+  for(var yy=0;yy<h0;yy++){var o=54+(h0-1-yy)*rs,s=yy*w*4;for(var xx=0;xx<w;xx++){u[o+xx*3]=d[s+xx*4+2];u[o+xx*3+1]=d[s+xx*4+1];u[o+xx*3+2]=d[s+xx*4];}}
+  return new Blob([buf],{type:"image/bmp"});}
+function baixar(blob,nome){var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=nome;document.body.append(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href);},4000);}
+var RELR=null,RELO=null;
+function relatorio(lista){
+  var o={resp:($("#xResp").value||appCfg.resp||"").trim(),de:$("#xDe").value,ate:$("#xAte").value||hoje()};
+  if(o.resp!==(appCfg.resp||"")){appCfg.resp=o.resp;try{store.setApp(appCfg);}catch(e){}}
+  RELO=o;RELR=relDados(lista,o);$("#relBox").innerHTML=relHTML(RELR,false);$("#relMsg").textContent=lista.length+(lista.length===1?" empresa no filtro.":" empresas no filtro.");
+  $("#relSh").hidden=!(API&&API.google);$("#dlgRel").showModal();}
+function relNome(e){return"relatorio_in_company_"+hoje()+"."+e;}
+async function relGravar(){
+  var m=$("#relMsg"),bt=$("#relSh");bt.disabled=true;m.textContent="Gravando a aba Relatório na sua planilha…";
+  try{
+    var sid=await gSid(),meta=await gApi(GS+sid+"?fields=sheets.properties"),ex=(meta.sheets||[]).filter(function(s){return s.properties.title==="Relatório";})[0],id=1004;
+    if(!ex)await gApi(GS+sid+":batchUpdate",{method:"POST",body:JSON.stringify({requests:[{addSheet:{properties:{sheetId:id,title:"Relatório",index:1}}}]})});else id=ex.properties.sheetId;
+    await gApi(GS+sid+"/values/"+encodeURIComponent("Relatório!A1:F300")+":clear",{method:"POST",body:"{}"});
+    var vals=RELR.map(function(r){var a=r.k==="blank"?["","","",""]:r.c.map(function(c){return celR(c)?c.v:c;});while(a.length<4)a.push("");return a;});
+    var rq=[{repeatCell:{range:{sheetId:id},cell:{userEnteredFormat:{}},fields:"userEnteredFormat"}},
+      {updateDimensionProperties:{range:{sheetId:id,dimension:"COLUMNS",startIndex:0,endIndex:1},properties:{pixelSize:380},fields:"pixelSize"}},
+      {updateDimensionProperties:{range:{sheetId:id,dimension:"COLUMNS",startIndex:1,endIndex:2},properties:{pixelSize:150},fields:"pixelSize"}},
+      {updateDimensionProperties:{range:{sheetId:id,dimension:"COLUMNS",startIndex:2,endIndex:3},properties:{pixelSize:170},fields:"pixelSize"}},
+      {updateDimensionProperties:{range:{sheetId:id,dimension:"COLUMNS",startIndex:3,endIndex:4},properties:{pixelSize:420},fields:"pixelSize"}}];
+    var cor=function(h){return{red:parseInt(h.substr(1,2),16)/255,green:parseInt(h.substr(3,2),16)/255,blue:parseInt(h.substr(5,2),16)/255};};
+    function fm(i,c0,c1,f,flds){rq.push({repeatCell:{range:{sheetId:id,startRowIndex:i,endRowIndex:i+1,startColumnIndex:c0,endColumnIndex:c1},cell:{userEnteredFormat:f},fields:flds}});}
+    RELR.forEach(function(r,i){
+      if(r.k==="title")fm(i,0,1,{textFormat:{bold:true,fontSize:14}},"userEnteredFormat.textFormat");
+      else if(r.k==="sec")fm(i,0,1,{textFormat:{bold:true,fontSize:11}},"userEnteredFormat.textFormat");
+      else if(r.k==="head")fm(i,0,r.sp?3:r.c.length,{backgroundColor:cor("#1F3864"),horizontalAlignment:"CENTER",textFormat:{bold:true,foregroundColor:cor("#ffffff")}},"userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)");
+      else if(r.k==="totb")fm(i,0,4,{backgroundColor:cor("#D9E1F2"),textFormat:{bold:true}},"userEnteredFormat(backgroundColor,textFormat)");
+      else if(r.k==="totg")fm(i,0,4,{backgroundColor:cor("#E2EFDA"),textFormat:{bold:true}},"userEnteredFormat(backgroundColor,textFormat)");
+      else if(r.k==="rowd")fm(i,0,4,{textFormat:{foregroundColor:cor("#C00000")}},"userEnteredFormat.textFormat");
+      if(r.c)r.c.forEach(function(c,j){if(celR(c)&&c.f==="m")fm(i,j,j+1,{numberFormat:{type:"CURRENCY",pattern:"R$ #,##0.00"}},"userEnteredFormat.numberFormat");if(celR(c)&&c.f==="p")fm(i,j,j+1,{numberFormat:{type:"PERCENT",pattern:"0%"}},"userEnteredFormat.numberFormat");});});
+    await gApi(GS+sid+"/values/"+encodeURIComponent("Relatório!A1")+"?valueInputOption=RAW",{method:"PUT",body:JSON.stringify({values:vals})});
+    await gApi(GS+sid+":batchUpdate",{method:"POST",body:JSON.stringify({requests:rq})});
+    m.textContent="Pronto! A aba “Relatório” foi gravada na sua planilha do Google.";
+  }catch(e){m.textContent="Não foi possível gravar: "+erroApi(e);}
+  bt.disabled=false;}
+
 /* ---------- exportar (com senha e filtros) ---------- */
 function csvDados(lista){
   var q=function(v){return'"'+String(v==null?"":v).replace(/"/g,'""')+'"';};
@@ -848,6 +1201,7 @@ function filtrarExp(){
   var campo=$("#xCampo").value,de=$("#xDe").value,ate=$("#xAte").value,sit=$("#xSit").value;
   return items.filter(function(it){
     if(sit&&it.status!==sit)return false;
+    if(!passaFX(it))return false;
     if(!de&&!ate)return true;
     var d=campo==="venda"?(it.status==="Concluída"?venda(it):""):campo==="contato"?(it.d1||""):(it.criado?ymd(new Date(it.criado)):"");
     if(!d)return false;
@@ -870,7 +1224,7 @@ async function exportar(lista){
 }
 
 /* ---------- senha e código de recuperação ---------- */
-var pModo="exportar",pExp=false,expLista=null;
+var pModo="exportar",pExp=false,expLista=null,expAcao="csv";
 function abrirP(m,exp){
   pModo=m;pExp=!!exp;$("#pErr").textContent="";
   ["#pAtual","#pCod","#pNova","#pConf"].forEach(function(x){$(x).value="";});
@@ -914,7 +1268,7 @@ $("#pOk").addEventListener("click",async function(){
   }
   $("#dlgP").close();
   if(cod)mostrarCodigo(cod);
-  if(pExp&&(pModo==="exportar"||pModo==="criar"))exportar(expLista||items);
+  if(pExp&&(pModo==="exportar"||pModo==="criar")){if(expAcao==="rel")relatorio(expLista||items);else exportar(expLista||items);}
 });
 
 /* ---------- configurações ---------- */
@@ -934,13 +1288,13 @@ function addLinha(st){
   o.f={d:dI,t:tI,g:gI,c:cI,r:rI};o.tit=tit;rowsC.push(o);$("#sCad").append(box);rot();
 }
 function abrirS(){
-  try{var pu=document.getElementById("pUrl"),pk=document.getElementById("pKey");if(pu)pu.value=API?API.url:"";if(pk)pk.value=API?API.key:"";}catch(e){}
+  try{var pu=document.getElementById("pUrl"),pk=document.getElementById("pKey");if(pu)pu.value=(API&&API.url)||"";if(pk)pk.value=(API&&API.key)||"";gStatus();}catch(e){}
   $("#sTema").value=appCfg.tema==="light"?"light":"dark";$("#sFds").checked=pulaFds();$("#sFer").checked=appCfg.fer!==false;$("#sCarn").checked=appCfg.carn!==false;$("#sExtra").value=appCfg.extra||"";
   $("#sIc").value=appCfg.ic||3;$("#sIo").value=appCfg.io||2;$("#sMail").value=appCfg.email||"";
   $("#sCad").textContent="";rowsC=[];CAD.forEach(function(x){addLinha(x);});
   $("#sSenha").textContent=cfg&&cfg.hash?"Alterar senha":"Criar senha";
   $("#sEsq").style.display=cfg&&cfg.rhash?"inline-block":"none";
-  $("#sCsvBox").hidden=true;$("#sMsg").textContent="";$("#dlgS").showModal();
+  $("#sCsvBox").hidden=true;$("#sMsg").textContent="";$("#sObs").value=obsLista().join("\n");$("#xResp").value=appCfg.resp||"";try{montarFX();$("#xCampo").value="contato";}catch(e){}$("#dlgS").showModal();
 }
 $("#cfgBtn").addEventListener("click",abrirS);
 $("#sNo").addEventListener("click",function(){$("#dlgS").close();});
@@ -952,13 +1306,18 @@ $("#sCsvCp").addEventListener("click",function(){copiar($("#sCsv").value);});
 $("#sExp").addEventListener("click",function(){
   var lista=filtrarExp();
   if(!lista.length){$("#sMsg").textContent="Nenhuma empresa nesse filtro.";return;}
-  expLista=lista;abrirP(cfg&&cfg.hash?"exportar":"criar",true);
+  expLista=lista;expAcao="csv";abrirP(cfg&&cfg.hash?"exportar":"criar",true);
+});
+$("#sRel").addEventListener("click",function(){
+  var lista=filtrarExp();
+  if(!lista.length){$("#sMsg").textContent="Nenhuma empresa nesse filtro.";return;}
+  expLista=lista;expAcao="rel";abrirP(cfg&&cfg.hash?"exportar":"criar",true);
 });
 $("#sOk").addEventListener("click",async function(){
   var cad=rowsC.map(function(o,i){return{d:i===0?0:Math.max(1,parseInt(o.f.d.value,10)||1),t:o.f.t.value.trim(),g:o.f.g.value.trim(),c:o.f.c.value,r:o.f.r.value};});
   if(cad.some(function(x){return!x.t;})){$("#sMsg").textContent="Preencha o nome de todos os contatos.";return;}
   cad.sort(function(a,b){return a.d-b.d;});
-  var n={tema:$("#sTema").value,fds:$("#sFds").checked,fer:$("#sFer").checked,carn:$("#sCarn").checked,extra:$("#sExtra").value.trim(),ic:Math.max(1,parseInt($("#sIc").value,10)||3),io:Math.max(1,parseInt($("#sIo").value,10)||2),email:$("#sMail").value.trim(),cad:cad};
+  var n=Object.assign({},appCfg,{obs:$("#sObs").value.split("\n").map(function(x){return x.trim();}).filter(Boolean),tema:$("#sTema").value,fds:$("#sFds").checked,fer:$("#sFer").checked,carn:$("#sCarn").checked,extra:$("#sExtra").value.trim(),ic:Math.max(1,parseInt($("#sIc").value,10)||3),io:Math.max(1,parseInt($("#sIo").value,10)||2),email:$("#sMail").value.trim(),cad:cad});
   appCfg=n;applyCfg();
   try{await store.setApp(n);}catch(e){}
   render();$("#dlgS").close();
@@ -975,6 +1334,52 @@ $("#gUf").append(h("option",{value:"",text:"Selecione"}));UFS.forEach(function(u
 montarFiltros();
 $("#xSit").append(h("option",{value:"",text:"Tudo"}));STATUS.forEach(function(s){$("#xSit").append(h("option",{value:s,text:s}));});
 init();
+</script>
+<style>.rel{background:#fff;color:#111;border-radius:8px;padding:12px;overflow-x:auto;max-height:55vh;overflow-y:auto}.rel td{color:#111}.rh{background:#1F3864;color:#fff!important;font-weight:bold;text-align:center;border:1px solid #1F3864;padding:4px 8px}#dlgRel{width:min(1000px,96vw)}</style>
+<dialog id="dlgAt"><h3 style="margin:0 0 4px">Outras atividades</h3>
+<p class="mu" style="margin:0 0 8px">Registre as atividades extras. Reunião de franqueados, Mentoria e Atendimento externo são contadas no relatório; as demais entram individualmente.</p>
+<div id="atLista"></div>
+<label for="atTipo">Atividade</label><select id="atTipo"><option>Reunião de franqueados</option><option>Mentoria</option><option>Atendimento externo</option><option>Outra atividade</option></select>
+<div class="row2"><div><label for="atData">Data</label><input id="atData" type="date"></div><div id="atQtdG"><label for="atQtd">Quantidade</label><input id="atQtd" type="number" min="1"></div></div>
+<div id="atTitG"><label for="atTit">Nome da atividade</label><input id="atTit" type="text" placeholder="Ex.: Ativação do LinkedIn"></div>
+<div id="atSitG"><label for="atSit">Situação</label><select id="atSit"><option>Realizada</option><option>Em execução</option><option>Concluída</option><option>Programada</option></select></div>
+<label for="atDesc">Descrição (opcional)</label><input id="atDesc" type="text">
+<div class="err" id="atErr" role="alert"></div>
+<div class="acts"><button class="p" id="atAdd" type="button">Adicionar atividade</button><button id="atFim" type="button">Fechar</button></div></dialog>
+<dialog id="dlgRel"><h3 style="margin:0 0 8px">Relatório</h3>
+<div class="rel" id="relBox"></div>
+<div class="mu" id="relMsg" role="status" style="margin:8px 0"></div>
+<div class="acts"><button class="p" id="relXls" type="button">Baixar planilha (Excel)</button><button id="relBmp" type="button">Baixar imagem BMP</button><button id="relPng" type="button">Imagem PNG</button><button class="l" id="relCsv" type="button">CSV</button><button class="l" id="relSh" type="button" hidden>Gravar na minha planilha Google</button><button id="relFim" type="button">Fechar</button></div></dialog>
+<script>
+$("#atBtn").addEventListener("click",abrirAtiv);$("#atFim").addEventListener("click",function(){$("#dlgAt").close();});$("#atTipo").addEventListener("change",atCampos);
+$("#atAdd").addEventListener("click",function(){var t=$("#atTipo").value,m=AT_MED.indexOf(t)>=0,e=$("#atErr");e.textContent="";
+  var a={id:uid(),tipo:t,data:$("#atData").value,desc:$("#atDesc").value.trim()};
+  if(m){a.qtd=Math.max(1,parseInt($("#atQtd").value,10)||1);}else{a.titulo=$("#atTit").value.trim();a.sit=$("#atSit").value;if(!a.titulo){e.textContent="Informe o nome da atividade.";return;}}
+  salvarAtiv(ativs().concat([a]));$("#atTit").value="";$("#atDesc").value="";$("#atQtd").value="1";listarAtiv();});
+$("#relFim").addEventListener("click",function(){$("#dlgRel").close();});
+$("#relXls").addEventListener("click",function(){baixar(new Blob(["\ufeff<html xmlns:x=\"urn:schemas-microsoft-com:office:excel\"><head><meta charset=\"utf-8\"></head><body>"+relHTML(RELR,true)+"</body></html>"],{type:"application/vnd.ms-excel;charset=utf-8"}),relNome("xls"));$("#relMsg").textContent="Planilha gerada. Se o Excel avisar sobre o formato, escolha Sim para abrir.";});
+$("#relCsv").addEventListener("click",function(){baixar(new Blob([relCSV(RELR)],{type:"text/csv;charset=utf-8"}),relNome("csv"));});
+$("#relBmp").addEventListener("click",function(){baixar(bmpDe(relCanvas(RELR,1.5)),relNome("bmp"));$("#relMsg").textContent="Imagem BMP gerada.";});
+$("#relPng").addEventListener("click",function(){relCanvas(RELR,2).toBlob(function(b){baixar(b,relNome("png"));$("#relMsg").textContent="Imagem PNG gerada.";},"image/png");});
+$("#relSh").addEventListener("click",relGravar);
+</script>
+<dialog id="dlgG"><h3 style="margin:0 0 4px">Entrar com Google</h3>
+<p class="mu" id="gTxt" style="margin:0 0 8px">Entre com a sua conta Gmail. O app cria a sua planilha no seu Google Drive e salva tudo nela, sem precisar de mais nada.</p>
+<p class="mu" id="gErr" style="color:#E30613"></p>
+<div class="acts"><button class="p" id="gIn2" type="button">Entrar com Google</button><button id="gNo" type="button">Agora não</button></div></dialog>
+<script>
+function abrirG(){var d=document.getElementById("dlgG");if(!d||d.open)return;
+  var t=document.getElementById("gTxt");t.textContent=GST&&GST.email?("Continue como "+GST.email+" para voltar a salvar na sua planilha."):"Entre com a sua conta Gmail. O app cria a sua planilha no seu Google Drive e salva tudo nela, sem precisar de mais nada.";
+  document.getElementById("gErr").textContent="";d.showModal();}
+function gStatus(){var s=document.getElementById("gSt");if(!s)return;var on=API&&API.google;
+  s.textContent=on?("Conectado como "+(GST&&GST.email||"conta Google")+". Os dados são salvos na planilha “"+GNOME+"” do seu Drive."):(GCID?"Não conectado. Entre com a sua conta Google para criar e usar a sua planilha.":"Falta o ID do cliente Google (em Avançado) para ativar o login.");
+  document.getElementById("gIn").hidden=!!on;document.getElementById("gOut").hidden=!on;
+  var c=document.getElementById("gCid");if(c&&!c.value)c.value=GCID||"";}
+document.getElementById("gIn").addEventListener("click",function(){gEntrar(this,document.getElementById("gErr1"));});
+document.getElementById("gIn2").addEventListener("click",function(){gEntrar(this,document.getElementById("gErr"));});
+document.getElementById("gNo").addEventListener("click",function(){document.getElementById("dlgG").close();});
+document.getElementById("gOut").addEventListener("click",gSair);
+document.getElementById("gCidOk").addEventListener("click",function(){var v=document.getElementById("gCid").value.trim();try{localStorage.setItem("pb2b_gcid",v);}catch(e){}GCID=GOOGLE_CLIENT_ID||v;gStatus();document.getElementById("gErr1").textContent=v?"ID salvo. Agora toque em Entrar com Google.":"";});
 </script>
 <dialog id="dlgA"><h3 style="margin:0 0 4px">Conexão com a planilha</h3>
 <p class="mu" style="margin:0 0 8px">Cole o endereço do Apps Script (termina em /exec) e a chave de acesso que você definiu no Code.gs.</p>
@@ -997,7 +1402,7 @@ document.getElementById("pTest").addEventListener("click",function(){
   var u=document.getElementById("pUrl").value.trim(),k=document.getElementById("pKey").value.trim();
   if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)){pm("O link deve começar com https://script.google.com e terminar com /exec.",false);return;}
   if(!k){pm("Informe a senha de acesso.",false);return;}
-  API={url:u,key:k};try{localStorage.setItem("pb2b_api",JSON.stringify(API));}catch(e){}
+  API={url:u,key:k};try{localStorage.setItem("pb2b_api",JSON.stringify(API));localStorage.removeItem("pb2b_g");}catch(e){}
   bt.disabled=true;bt.textContent="Conectando…";pm("Conectando à planilha…");
   gs("getAll").then(function(d){pl(d&&d.url);fim("Conectado ✓",true);pm("OK! Conectado. A planilha está pronta e os dados serão salvos nela.",true);
     if(typeof carregar==="function")carregar().catch(function(){});})
