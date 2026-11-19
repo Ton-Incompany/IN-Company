@@ -247,13 +247,6 @@ setTimeout(fechar,2800);
     <details class="mn" style="margin-top:10px"><summary>Avançado</summary><div class="mb">
       <label for="gCid">ID do cliente Google (OAuth)</label><input id="gCid" type="text" autocomplete="off" placeholder="123456-abc.apps.googleusercontent.com">
       <div class="acts"><button class="l" id="gCidOk" type="button">Salvar ID</button></div>
-      <div id="gLeg" hidden>
-      <p class="mu" style="margin:14px 0 4px">Conexão antiga por Apps Script:</p>
-      <label for="pUrl">Link da planilha (endereço do Apps Script, termina em /exec)</label><input id="pUrl" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
-      <label for="pKey">Senha de acesso</label><input id="pKey" type="password" autocomplete="off">
-      <div class="acts"><button class="p" id="pTest" type="button">Salvar e conectar</button></div>
-      <div class="mu" id="pMsg" role="status" style="margin-top:8px"></div>
-      </div>
     </div></details>
   </div></details>
   <details class="mn"><summary>Senha e recuperação</summary><div class="mb">
@@ -397,14 +390,12 @@ function localStore(){
     save:function(o){var i=items.findIndex(function(x){return x.id===o.id});if(i<0)items.push(o);else items[i]=o;persist();render();},
     remove:function(id){items=items.filter(function(x){return x.id!==id});persist();render();}};
 }
-var API=null;try{API=JSON.parse(localStorage.getItem("pb2b_api")||"null");}catch(e){}
+var API=null;
 function gs(fn){var a=Array.prototype.slice.call(arguments,1);
   if(API&&API.google)return gG(fn,a);
-  if(!API)return Promise.reject(new Error("sem conexão configurada"));
-  return fetch(API.url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({k:API.key,fn:fn,a:a})})
-    .then(function(r){return r.json();}).then(function(d){if(d.erro)throw new Error(d.erro);return d.r;});}
+  return Promise.reject(new Error("sem conexão configurada"));}
 
-/* ---------- Entrar com Google (planilha criada na conta de quem entra, sem Apps Script) ---------- */
+/* ---------- Entrar com Google (planilha criada na conta de quem entra) ---------- */
 var GOOGLE_CLIENT_ID="";
 var GCID=GOOGLE_CLIENT_ID||"";try{GCID=GCID||localStorage.getItem("pb2b_gcid")||"";}catch(e){}
 var GST=null;try{GST=JSON.parse(localStorage.getItem("pb2b_g")||"null");}catch(e){}
@@ -548,12 +539,7 @@ function erroApi(e){var m0=String(e&&e.message||e||"");
   if(m0==="login")return "a sessão do Google expirou. Toque em Entrar com Google para continuar.";
   if(m0==="semcid")return "falta o ID do cliente Google (Configurações > Planilha do Google > Avançado).";
   if(API&&API.google)return m0||"erro desconhecido.";
-  var m=m0;
-  if(m==="chave")return "chave de acesso incorreta (Configurações > Planilha do Google > Endereço e chave).";
-  if(/Failed to fetch|NetworkError|Load failed/i.test(m))return "não alcançou o Apps Script. Confira a internet e se a implantação está com acesso 'Qualquer pessoa'.";
-  if(/Unexpected token|JSON/i.test(m))return "o Apps Script respondeu uma página de login. Em Implantar > Gerenciar implantações, use 'Quem pode acessar: Qualquer pessoa' e crie uma Nova versão.";
-  return m||"erro desconhecido.";}
-function abrirApi(){$("#aUrl").value=(API&&API.url)||"";$("#aKey").value=(API&&API.key)||"";$("#aErr").textContent="";$("#dlgA").showModal();}
+  return m0||"erro desconhecido.";}
 var pend=0;
 function persist(p){pend++;return p.then(function(){pend--;if(!pend)$("#modo").textContent="";}).catch(function(e){pend--;$("#modo").textContent="Não foi possível salvar na planilha: "+erroApi(e);if(e&&e.message==="login")abrirG();});}
 async function carregar(){
@@ -572,7 +558,7 @@ async function init(){
       setCfg:function(c){cfg=c;return persist(gs("saveCfg","senha",c));},
       setApp:function(c){appCfg=c;return persist(gs("saveCfg","app",c));}};
     $("#modo").textContent="Carregando…";
-    try{await carregar();$("#modo").textContent="";}catch(e){$("#modo").textContent="Não foi possível carregar a planilha: "+erroApi(e);if(e.message==="chave")abrirApi();else if(e.message==="login")abrirG();}
+    try{await carregar();$("#modo").textContent="";}catch(e){$("#modo").textContent="Não foi possível carregar a planilha: "+erroApi(e);if(e.message==="login")abrirG();}
     document.addEventListener("visibilitychange",function(){
       var ae=document.activeElement&&document.activeElement.tagName;
       if(document.visibilityState==="visible"&&!pend&&!document.querySelector("dialog[open]")&&ae!=="INPUT"&&ae!=="TEXTAREA"&&ae!=="SELECT")carregar().catch(function(){});});
@@ -1290,7 +1276,7 @@ function addLinha(st){
   o.f={d:dI,t:tI,g:gI,c:cI,r:rI};o.tit=tit;rowsC.push(o);$("#sCad").append(box);rot();
 }
 function abrirS(){
-  try{var pu=document.getElementById("pUrl"),pk=document.getElementById("pKey");if(pu)pu.value=(API&&API.url)||"";if(pk)pk.value=(API&&API.key)||"";gStatus();}catch(e){}
+  try{gStatus();}catch(e){}
   $("#sTema").value=appCfg.tema==="light"?"light":"dark";$("#sFds").checked=pulaFds();$("#sFer").checked=appCfg.fer!==false;$("#sCarn").checked=appCfg.carn!==false;$("#sExtra").value=appCfg.extra||"";
   $("#sIc").value=appCfg.ic||3;$("#sIo").value=appCfg.io||2;$("#sMail").value=appCfg.email||"";
   $("#sCad").textContent="";rowsC=[];CAD.forEach(function(x){addLinha(x);});
@@ -1375,7 +1361,7 @@ function abrirG(){var d=document.getElementById("dlgG");if(!d||d.open)return;
   document.getElementById("gErr").textContent="";d.showModal();}
 function gStatus(){var s=document.getElementById("gSt");if(!s)return;var on=API&&API.google;
   s.textContent=on?("Conectado como "+(GST&&GST.email||"conta Google")+". Os dados são salvos na planilha “"+GNOME+"” do seu Drive."):(GCID?"Não conectado. Entre com a sua conta Google para criar e usar a sua planilha.":"Falta o ID do cliente Google (em Avançado) para ativar o login.");
-  document.getElementById("gIn").hidden=!!on;document.getElementById("gOut").hidden=!on;var lg=document.getElementById("gLeg");if(lg)lg.hidden=!(API&&API.url);
+  document.getElementById("gIn").hidden=!!on;document.getElementById("gOut").hidden=!on;
   var c=document.getElementById("gCid");if(c&&!c.value)c.value=GCID||"";}
 document.getElementById("gIn").addEventListener("click",function(){gEntrar(this,document.getElementById("gErr1"));});
 document.getElementById("gIn2").addEventListener("click",function(){gEntrar(this,document.getElementById("gErr"));});
@@ -1383,32 +1369,8 @@ document.getElementById("gNo").addEventListener("click",function(){document.getE
 document.getElementById("gOut").addEventListener("click",gSair);
 document.getElementById("gCidOk").addEventListener("click",function(){var v=document.getElementById("gCid").value.trim();try{localStorage.setItem("pb2b_gcid",v);}catch(e){}GCID=GOOGLE_CLIENT_ID||v;gStatus();document.getElementById("gErr1").textContent=v?"ID salvo. Agora toque em Entrar com Google.":"";});
 </script>
-<dialog id="dlgA"><h3 style="margin:0 0 4px">Conexão com a planilha</h3>
-<p class="mu" style="margin:0 0 8px">Cole o endereço do Apps Script (termina em /exec) e a chave de acesso que você definiu no Code.gs.</p>
-<label for="aUrl">Endereço do Apps Script</label><input id="aUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
-<label for="aKey">Chave de acesso</label><input id="aKey" type="password" autocomplete="off">
-<p class="mu" id="aErr" style="color:#E30613"></p>
-<div class="acts"><button class="p" id="aOk">Conectar</button><button id="aNo">Agora não</button></div></dialog>
 <script>
-$("#aNo").addEventListener("click",function(){$("#dlgA").close();});
-$("#aOk").addEventListener("click",function(){var u=$("#aUrl").value.trim(),k=$("#aKey").value.trim();
-  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)){$("#aErr").textContent="O endereço deve começar com https://script.google.com e terminar com /exec.";return;}
-  if(!k){$("#aErr").textContent="Informe a chave de acesso.";return;}
-  try{localStorage.setItem("pb2b_api",JSON.stringify({url:u,key:k}));}catch(e){}
-  location.reload();});
 function pm(t,ok){var m=document.getElementById("pMsg");m.textContent=t;m.style.fontWeight="700";var g=document.getElementById("sMsg");if(g){g.textContent=t;g.style.fontWeight="700";g.style.color=ok===false?"#E30613":ok===true?"#1b9e4b":"";}m.style.color=ok===false?"#E30613":ok===true?"#1b9e4b":"";try{m.scrollIntoView({block:"nearest"});}catch(e){}}
-function pl(u){}
-document.getElementById("pTest").addEventListener("click",function(){
-  var bt=document.getElementById("pTest"),rot="Salvar e conectar";
-  function fim(t,cls){bt.disabled=false;bt.textContent=t;bt.style.background=cls?"#1b9e4b":"";bt.style.borderColor=cls?"#1b9e4b":"";if(cls)setTimeout(function(){bt.textContent=rot;bt.style.background="";bt.style.borderColor="";},4000);}
-  var u=document.getElementById("pUrl").value.trim(),k=document.getElementById("pKey").value.trim();
-  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)){pm("O link deve começar com https://script.google.com e terminar com /exec.",false);return;}
-  if(!k){pm("Informe a senha de acesso.",false);return;}
-  API={url:u,key:k};try{localStorage.setItem("pb2b_api",JSON.stringify(API));localStorage.removeItem("pb2b_g");}catch(e){}
-  bt.disabled=true;bt.textContent="Conectando…";pm("Conectando à planilha…");
-  gs("getAll").then(function(d){pl(d&&d.url);fim("Conectado ✓",true);pm("OK! Conectado. A planilha está pronta e os dados serão salvos nela.",true);
-    if(typeof carregar==="function")carregar().catch(function(){});})
-   .catch(function(e){fim(rot,false);pm("Não conectou: "+erroApi(e),false);});});
 if("serviceWorker" in navigator&&/^https?:/.test(location.protocol))navigator.serviceWorker.register("sw.js").catch(function(){});
 </script>
 </body>
