@@ -519,18 +519,20 @@ async function gEntrar(btn,errEl){
   var rot=btn.textContent;errEl.textContent="";
   if(!GCID){errEl.textContent="O login do Google ainda não foi ativado neste app (falta o ID do cliente no arquivo index.html).";return;}
   btn.disabled=true;btn.textContent="Abrindo o Google…";
+  var dica=setTimeout(function(){errEl.textContent="Se a janela do Google não abriu, o navegador pode ter bloqueado o pop-up: permita pop-ups para este endereço e toque de novo. Se estiver no aplicativo instalado, abra o endereço no Chrome.";btn.disabled=false;btn.textContent=rot;},9000);
   try{
     G.tok=null;var t=await gToken(true);
     var r=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+t}});var u=r.ok?await r.json():{};
     var novo=!GST||GST.email!==u.email;
     GST={email:u.email||""};G.sid=null;if(novo){try{localStorage.removeItem("pb2b_gsid");}catch(e){}}
     try{localStorage.setItem("pb2b_g",JSON.stringify(GST));}catch(e){}
-    btn.textContent="Conectado ✓";location.reload();
-  }catch(e){btn.disabled=false;btn.textContent=rot;errEl.textContent=String(e&&e.message||e);}}
+    clearTimeout(dica);btn.textContent="Conectado ✓";location.reload();
+  }catch(e){clearTimeout(dica);btn.disabled=false;btn.textContent=rot;errEl.textContent=String(e&&e.message||e);}}
 function gSair(){try{["pb2b_g","pb2b_gtok","pb2b_gsid"].forEach(function(k){localStorage.removeItem(k);});}catch(e){}
   try{if(G.tok&&window.google&&google.accounts)google.accounts.oauth2.revoke(G.tok,function(){});}catch(e){}
   location.reload();}
 if(GST&&GCID&&!(API&&API.google)){API={google:true,email:GST.email};}
+try{if(GCID)gLoad().catch(function(){});}catch(e){}
 
 function erroApi(e){var m0=String(e&&e.message||e||"");
   if(m0==="login")return "a sessão do Google expirou. Toque em Entrar com Google para continuar.";
