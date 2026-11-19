@@ -1000,20 +1000,21 @@ function negBloco(it){
   return h("div",{class:"neg",style:"margin-top:10px"},h("div",{class:"row2"},h("div",{},h("label",{},"Caminho",sc)),extra?h("div",{},extra):null,h("div",{},h("label",{},"Observação do resultado",so))));
 }
 /* atividades extras */
-var AT_MED=["Reunião de franqueados","Mentoria","Atendimento externo"];
+var AT_MED=["Reunião de franqueados","Atendimento externo"];
+function atNome(a){return a.titulo||(a.tipo&&a.tipo!=="Outra atividade"?a.tipo:"Atividade");}
 var AT_SIT=["Realizada","Em execução","Concluída","Programada"];
 function ativs(){return Array.isArray(appCfg.ativ)?appCfg.ativ:[];}
 function salvarAtiv(l){appCfg.ativ=l;try{store.setApp(appCfg);}catch(e){}}
 function listarAtiv(){
   var B=$("#atLista");B.textContent="";var l=ativs().slice().sort(function(a,b){return(b.data||"")<(a.data||"")?-1:1;});
-  var tot={};AT_MED.forEach(function(t){tot[t]=0;});l.forEach(function(a){if(tot[a.tipo]!==undefined)tot[a.tipo]+=Number(a.qtd)||1;});
-  B.append(h("div",{class:"mu",style:"margin:0 0 8px",text:AT_MED.map(function(t){return t+": "+tot[t];}).join(" · ")}));
   if(!l.length)B.append(h("div",{class:"mu",text:"Nenhuma atividade registrada."}));
-  l.forEach(function(a){B.append(h("div",{class:"log"},h("span",{text:(a.data?fmt(a.data)+" · ":"")+(a.hi?a.hi+(a.hf?"–"+a.hf:"")+" · ":"")+(AT_MED.indexOf(a.tipo)>=0?a.tipo:(a.titulo||"Atividade")+" · "+(a.sit||""))+(a.desc?" · "+a.desc:"")}),
+  l.forEach(function(a){B.append(h("div",{class:"log"},h("span",{text:(a.data?fmt(a.data)+" · ":"")+(a.dia?"Dia inteiro · ":a.hi?a.hi+(a.hf?"–"+a.hf:"")+" · ":"")+(AT_MED.indexOf(a.tipo)>=0?a.tipo:atNome(a)+" · "+(a.sit||""))+(a.desc?" · "+a.desc:"")}),
     h("button",{class:"l",text:"Remover","aria-label":"Remover atividade",on:{click:function(){confirmar("Remover esta atividade?",function(){salvarAtiv(ativs().filter(function(x){return x.id!==a.id;}));listarAtiv();});}}})));});
 }
+var atDiaOn=false;
+function atDia(v){atDiaOn=!!v;var b=$("#atDia");b.setAttribute("aria-checked",atDiaOn?"true":"false");$("#atDiaIc").textContent=atDiaOn?"✓":"";$("#atHor").style.display=atDiaOn?"none":"grid";if(atDiaOn){$("#atHi").value="";$("#atHf").value="";}}
 function atCampos(){var m=AT_MED.indexOf($("#atTipo").value)>=0;$("#atTitG").style.display=m?"none":"block";$("#atSitG").style.display=m?"none":"block";}
-function abrirAtiv(){$("#atData").value=hoje();$("#atHi").value="";$("#atHf").value="";$("#atTit").value="";$("#atDesc").value="";$("#atErr").textContent="";atCampos();listarAtiv();$("#dlgAt").showModal();}
+function abrirAtiv(){$("#atData").value=hoje();$("#atHi").value="";$("#atHf").value="";atDia(false);$("#atTit").value="";$("#atDesc").value="";$("#atErr").textContent="";atCampos();listarAtiv();$("#dlgAt").showModal();}
 /* filtros do export (mesmos filtros da tela principal) */
 var FX={canal:"",fonte:"",consultor:"",uf:"",cidade:"",caminho:""},flx={};
 function passaFX(it){var fr=it.fr||{};
@@ -1085,7 +1086,7 @@ function relDados(lista,o){
   var at=ativs().filter(function(a){return(!o.de||!a.data||a.data>=o.de)&&(!o.ate||!a.data||a.data<=o.ate);});
   AT_MED.forEach(function(t){var q=at.filter(function(a){return a.tipo===t;}).reduce(function(s,a){return s+(Number(a.qtd)||1);},0);R.push({k:"row",c:[t+(t==="Reunião de franqueados"?" (orientação)":""),Nn(q),"Realizadas",""]});});
   var gr={},ordem=[];at.filter(function(a){return AT_MED.indexOf(a.tipo)<0;}).sort(function(a,b){return(a.data||"")<(b.data||"")?-1:1;}).forEach(function(a){
-    var k=(a.titulo||"Atividade").trim().toLowerCase();if(!gr[k]){gr[k]={n:a.titulo||"Atividade",q:0,sit:"",d:[]};ordem.push(k);}
+    var k=atNome(a).trim().toLowerCase();if(!gr[k]){gr[k]={n:atNome(a),q:0,sit:"",d:[]};ordem.push(k);}
     var g=gr[k];g.q+=Number(a.qtd)||1;g.sit=a.sit||g.sit;if(a.desc&&g.d.indexOf(a.desc)<0)g.d.push(a.desc);});
   ordem.forEach(function(k){var g=gr[k];R.push({k:"row",c:[g.n,Nn(g.q),g.sit,g.d.join("; ")]});});
   return R;}
@@ -1329,10 +1330,12 @@ init();
 </script>
 <style>.rel{background:#fff;color:#111;border-radius:8px;padding:12px;overflow-x:auto;max-height:55vh;overflow-y:auto}.rel td{color:#111}.rh{background:#1F3864;color:#fff!important;font-weight:bold;text-align:center;border:1px solid #1F3864;padding:4px 8px}#dlgRel{width:min(1000px,96vw)}</style>
 <dialog id="dlgAt"><h3 style="margin:0 0 4px">Outras atividades</h3>
-<p class="mu" style="margin:0 0 8px">Registre as atividades extras. Cada registro conta como uma atividade. No relatório, as atividades iguais são somadas. A hora aparece só aqui, não no relatório.</p>
+<p class="mu" style="margin:0 0 8px">Registre as atividades extras. Cada registro conta como uma atividade. Para outras atividades (mentoria, por exemplo), escolha "Outra atividade" e escreva o nome. No relatório, as atividades iguais são somadas. A hora aparece só aqui, não no relatório.</p>
 <div id="atLista"></div>
-<label for="atTipo">Atividade</label><select id="atTipo"><option>Reunião de franqueados</option><option>Mentoria</option><option>Atendimento externo</option><option>Outra atividade</option></select>
-<div class="row2"><div><label for="atData">Data</label><input id="atData" type="date"></div><div><label for="atHi">Hora de início</label><input id="atHi" type="time"></div><div><label for="atHf">Hora de fim</label><input id="atHf" type="time"></div></div>
+<label for="atTipo">Atividade</label><select id="atTipo"><option>Reunião de franqueados</option><option>Atendimento externo</option><option>Outra atividade</option></select>
+<label for="atData">Data</label><input id="atData" type="date">
+<button type="button" id="atDia" class="l" role="switch" aria-checked="false" style="margin-top:10px;display:inline-flex;align-items:center;gap:8px"><span id="atDiaIc" aria-hidden="true" style="display:inline-flex;width:20px;height:20px;border:2px solid currentColor;border-radius:5px;align-items:center;justify-content:center;font-size:14px;line-height:1"></span>Dia inteiro</button>
+<div id="atHor" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><label for="atHi">Início</label><input id="atHi" type="time"></div><div><label for="atHf">Fim</label><input id="atHf" type="time"></div></div>
 <div id="atTitG"><label for="atTit">Nome da atividade</label><input id="atTit" type="text" placeholder="Ex.: Ativação do LinkedIn"></div>
 <div id="atSitG"><label for="atSit">Situação</label><select id="atSit"><option>Realizada</option><option>Em execução</option><option>Concluída</option><option>Programada</option></select></div>
 <label for="atDesc">Descrição (opcional)</label><input id="atDesc" type="text">
@@ -1343,12 +1346,12 @@ init();
 <div class="mu" id="relMsg" role="status" style="margin:8px 0"></div>
 <div class="acts"><button class="p" id="relXls" type="button">Baixar planilha (Excel)</button><button id="relBmp" type="button">Baixar imagem BMP</button><button id="relPng" type="button">Imagem PNG</button><button class="l" id="relCsv" type="button">CSV</button><button class="l" id="relSh" type="button" hidden>Gravar na minha planilha Google</button><button id="relFim" type="button">Fechar</button></div></dialog>
 <script>
-$("#atBtn").addEventListener("click",abrirAtiv);$("#atFim").addEventListener("click",function(){$("#dlgAt").close();});$("#atTipo").addEventListener("change",atCampos);
+$("#atBtn").addEventListener("click",abrirAtiv);$("#atFim").addEventListener("click",function(){$("#dlgAt").close();});$("#atTipo").addEventListener("change",atCampos);$("#atDia").addEventListener("click",function(){atDia(!atDiaOn);});
 $("#atAdd").addEventListener("click",function(){var t=$("#atTipo").value,m=AT_MED.indexOf(t)>=0,e=$("#atErr");e.textContent="";
-  var a={id:uid(),tipo:t,data:$("#atData").value,hi:$("#atHi").value,hf:$("#atHf").value,desc:$("#atDesc").value.trim()};
+  var a={id:uid(),tipo:t,data:$("#atData").value,dia:atDiaOn,hi:atDiaOn?"":$("#atHi").value,hf:atDiaOn?"":$("#atHf").value,desc:$("#atDesc").value.trim()};
   if(a.hi&&a.hf&&a.hf<a.hi){e.textContent="A hora de fim deve ser depois da hora de início.";return;}
   if(!m){a.titulo=$("#atTit").value.trim();a.sit=$("#atSit").value;if(!a.titulo){e.textContent="Informe o nome da atividade.";return;}}
-  salvarAtiv(ativs().concat([a]));$("#atTit").value="";$("#atDesc").value="";$("#atHi").value="";$("#atHf").value="";listarAtiv();});
+  salvarAtiv(ativs().concat([a]));$("#atTit").value="";$("#atDesc").value="";$("#atHi").value="";$("#atHf").value="";atDia(false);listarAtiv();});
 $("#relFim").addEventListener("click",function(){$("#dlgRel").close();});
 $("#relXls").addEventListener("click",function(){baixar(new Blob(["\ufeff<html xmlns:x=\"urn:schemas-microsoft-com:office:excel\"><head><meta charset=\"utf-8\"></head><body>"+relHTML(RELR,true)+"</body></html>"],{type:"application/vnd.ms-excel;charset=utf-8"}),relNome("xls"));$("#relMsg").textContent="Planilha gerada. Se o Excel avisar sobre o formato, escolha Sim para abrir.";});
 $("#relCsv").addEventListener("click",function(){baixar(new Blob([relCSV(RELR)],{type:"text/csv;charset=utf-8"}),relNome("csv"));});
