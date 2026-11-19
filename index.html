@@ -397,7 +397,7 @@ function gs(fn){var a=Array.prototype.slice.call(arguments,1);
   return Promise.reject(new Error("sem conexão configurada"));}
 
 /* ---------- Entrar com Google (planilha criada na conta de quem entra) ---------- */
-var GOOGLE_CLIENT_ID="";
+var GOOGLE_CLIENT_ID="188100219196-s75qcug90uv83eu1g8fhops048frisio.apps.googleusercontent.com";
 var GCID=GOOGLE_CLIENT_ID||"";try{GCID=GCID||localStorage.getItem("pb2b_gcid")||"";}catch(e){}
 var GST=null;try{GST=JSON.parse(localStorage.getItem("pb2b_g")||"null");}catch(e){}
 var GSCOPE="https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
