@@ -562,7 +562,7 @@ async function init(){
     document.addEventListener("visibilitychange",function(){
       var ae=document.activeElement&&document.activeElement.tagName;
       if(document.visibilityState==="visible"&&!pend&&!document.querySelector("dialog[open]")&&ae!=="INPUT"&&ae!=="TEXTAREA"&&ae!=="SELECT")carregar().catch(function(){});});
-  }else{store=localStore();$("#modo").textContent="Sem conexão com a planilha: dados só neste aparelho.";render();if(GCID&&!sessionStorage.getItem("pb2b_gask")){try{sessionStorage.setItem("pb2b_gask","1");}catch(e){}setTimeout(function(){abrirG();},3100);}}
+  }else{store=localStore();$("#modo").textContent=GCID?"Sem conexão com a planilha: dados só neste aparelho.":"Sem conexão com a planilha. Para salvar na sua conta Google, informe o ID do cliente em Configurações > Planilha do Google > Avançado.";render();if(GCID&&!sessionStorage.getItem("pb2b_gask")){try{sessionStorage.setItem("pb2b_gask","1");}catch(e){}setTimeout(function(){abrirG();},3100);}}
 }
 function save(it){if(store)store.save(it);}
 
