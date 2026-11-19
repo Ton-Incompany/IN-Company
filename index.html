@@ -244,10 +244,6 @@ setTimeout(fechar,2800);
     <p class="mu" id="gSt" style="margin:0 0 8px"></p>
     <div class="acts"><button class="p" id="gIn" type="button">Entrar com Google</button><button class="l" id="gOut" type="button" hidden>Sair da conta</button></div>
     <p class="mu" id="gErr1" style="color:#E30613"></p>
-    <details class="mn" style="margin-top:10px"><summary>Avançado</summary><div class="mb">
-      <label for="gCid">ID do cliente Google (OAuth)</label><input id="gCid" type="text" autocomplete="off" placeholder="123456-abc.apps.googleusercontent.com">
-      <div class="acts"><button class="l" id="gCidOk" type="button">Salvar ID</button></div>
-    </div></details>
   </div></details>
   <details class="mn"><summary>Senha e recuperação</summary><div class="mb">
     <label for="sMail">E-mail de recuperação</label><input id="sMail" type="text">
@@ -398,7 +394,7 @@ function gs(fn){var a=Array.prototype.slice.call(arguments,1);
 
 /* ---------- Entrar com Google (planilha criada na conta de quem entra) ---------- */
 var GOOGLE_CLIENT_ID="188100219196-s75qcug90uv83eu1g8fhops048frisio.apps.googleusercontent.com";
-var GCID=GOOGLE_CLIENT_ID||"";try{GCID=GCID||localStorage.getItem("pb2b_gcid")||"";}catch(e){}
+var GCID=GOOGLE_CLIENT_ID||"";
 var GST=null;try{GST=JSON.parse(localStorage.getItem("pb2b_g")||"null");}catch(e){}
 var GSCOPE="https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
 var GNOME="IN Company Chilli Beans - Prospecção";
@@ -521,7 +517,7 @@ function gG(fn,a){
   return Promise.reject(new Error("função desconhecida"));}
 async function gEntrar(btn,errEl){
   var rot=btn.textContent;errEl.textContent="";
-  if(!GCID){errEl.textContent="Falta o ID do cliente Google. Cole-o em Configurações > Planilha do Google > Avançado (veja o LEIA-ME).";return;}
+  if(!GCID){errEl.textContent="O login do Google ainda não foi ativado neste app (falta o ID do cliente no arquivo index.html).";return;}
   btn.disabled=true;btn.textContent="Abrindo o Google…";
   try{
     G.tok=null;var t=await gToken(true);
@@ -538,7 +534,7 @@ if(GST&&GCID&&!(API&&API.google)){API={google:true,email:GST.email};}
 
 function erroApi(e){var m0=String(e&&e.message||e||"");
   if(m0==="login")return "a sessão do Google expirou. Toque em Entrar com Google para continuar.";
-  if(m0==="semcid")return "falta o ID do cliente Google (Configurações > Planilha do Google > Avançado).";
+  if(m0==="semcid")return "o login do Google ainda não foi ativado neste app.";
   if(API&&API.google)return m0||"erro desconhecido.";
   return m0||"erro desconhecido.";}
 var pend=0;
@@ -563,7 +559,7 @@ async function init(){
     document.addEventListener("visibilitychange",function(){
       var ae=document.activeElement&&document.activeElement.tagName;
       if(document.visibilityState==="visible"&&!pend&&!document.querySelector("dialog[open]")&&ae!=="INPUT"&&ae!=="TEXTAREA"&&ae!=="SELECT")carregar().catch(function(){});});
-  }else{store=localStore();$("#modo").textContent=GCID?"Sem conexão com a planilha: dados só neste aparelho.":"Sem conexão com a planilha. Para salvar na sua conta Google, informe o ID do cliente em Configurações > Planilha do Google > Avançado.";render();if(GCID&&!sessionStorage.getItem("pb2b_gask")){try{sessionStorage.setItem("pb2b_gask","1");}catch(e){}setTimeout(function(){abrirG();},3100);}}
+  }else{store=localStore();$("#modo").textContent="Sem conexão com a planilha: dados só neste aparelho. Entre com o Google para salvar na sua planilha.";render();if(!sessionStorage.getItem("pb2b_gask")){try{sessionStorage.setItem("pb2b_gask","1");}catch(e){}setTimeout(function(){abrirG();},3100);}}
 }
 function save(it){if(store)store.save(it);}
 
@@ -1369,14 +1365,13 @@ function abrirG(){var d=document.getElementById("dlgG");if(!d||d.open)return;
   var t=document.getElementById("gTxt");t.textContent=GST&&GST.email?("Continue como "+GST.email+" para voltar a salvar na sua planilha."):"Entre com a sua conta Gmail. O app cria a sua planilha no seu Google Drive e salva tudo nela, sem precisar de mais nada.";
   document.getElementById("gErr").textContent="";d.showModal();}
 function gStatus(){var s=document.getElementById("gSt");if(!s)return;var on=API&&API.google;
-  s.textContent=on?("Conectado como "+(GST&&GST.email||"conta Google")+". Os dados são salvos na planilha “"+GNOME+"” do seu Drive."):(GCID?"Não conectado. Entre com a sua conta Google para criar e usar a sua planilha.":"Falta o ID do cliente Google (em Avançado) para ativar o login.");
+  s.textContent=on?("Conectado como "+(GST&&GST.email||"conta Google")+". Os dados são salvos na planilha “"+GNOME+"” do seu Drive."):"Não conectado. Entre com a sua conta Google para criar e usar a sua planilha.";
   document.getElementById("gIn").hidden=!!on;document.getElementById("gOut").hidden=!on;
-  var c=document.getElementById("gCid");if(c&&!c.value)c.value=GCID||"";}
+  }
 document.getElementById("gIn").addEventListener("click",function(){gEntrar(this,document.getElementById("gErr1"));});
 document.getElementById("gIn2").addEventListener("click",function(){gEntrar(this,document.getElementById("gErr"));});
 document.getElementById("gNo").addEventListener("click",function(){document.getElementById("dlgG").close();});
 document.getElementById("gOut").addEventListener("click",gSair);
-document.getElementById("gCidOk").addEventListener("click",function(){var v=document.getElementById("gCid").value.trim();try{localStorage.setItem("pb2b_gcid",v);}catch(e){}GCID=GOOGLE_CLIENT_ID||v;gStatus();document.getElementById("gErr1").textContent=v?"ID salvo. Agora toque em Entrar com Google.":"";});
 </script>
 <script>
 function pm(t,ok){var m=document.getElementById("pMsg");m.textContent=t;m.style.fontWeight="700";var g=document.getElementById("sMsg");if(g){g.textContent=t;g.style.fontWeight="700";g.style.color=ok===false?"#E30613":ok===true?"#1b9e4b":"";}m.style.color=ok===false?"#E30613":ok===true?"#1b9e4b":"";try{m.scrollIntoView({block:"nearest"});}catch(e){}}
