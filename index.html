@@ -561,7 +561,7 @@ async function init(){
     document.addEventListener("visibilitychange",function(){
       var ae=document.activeElement&&document.activeElement.tagName;
       if(document.visibilityState==="visible"&&!pend&&!document.querySelector("dialog[open]")&&ae!=="INPUT"&&ae!=="TEXTAREA"&&ae!=="SELECT")carregar().catch(function(){});});
-  }else{store=localStore();$("#modo").textContent="Sem conexão com a planilha: dados só neste aparelho. Entre com o Google para salvar na sua planilha.";render();if(!sessionStorage.getItem("pb2b_gask")){try{sessionStorage.setItem("pb2b_gask","1");}catch(e){}setTimeout(function(){abrirG();},3100);}}
+  }else{store=localStore();$("#modo").textContent="Sem conexão com a planilha: dados só neste aparelho. Entre com o Google para salvar na sua planilha.";render();var bg=document.createElement("button");bg.className="p";bg.type="button";bg.textContent="Entrar com Google";bg.style.marginLeft="10px";bg.addEventListener("click",function(){abrirG();});$("#modo").append(bg);setTimeout(function(){abrirG();},3100);}
 }
 function save(it){if(store)store.save(it);}
 
@@ -1360,19 +1360,19 @@ $("#relSh").addEventListener("click",relGravar);
 </script>
 <dialog id="dlgG"><h3 style="margin:0 0 4px">Entrar com Google</h3>
 <p class="mu" id="gTxt" style="margin:0 0 8px">Entre com a sua conta Gmail. O app cria a sua planilha no seu Google Drive e salva tudo nela, sem precisar de mais nada.</p>
-<p class="mu" id="gErr" style="color:#E30613"></p>
-<div class="acts"><button class="p" id="gIn2" type="button">Entrar com Google</button><button id="gNo" type="button">Agora não</button></div></dialog>
+<p class="mu" id="lgErr" style="color:#E30613"></p>
+<div class="acts"><button class="p" id="gIn2" type="button">Entrar com Google</button><button id="lgNo" type="button">Agora não</button></div></dialog>
 <script>
 function abrirG(){var d=document.getElementById("dlgG");if(!d||d.open)return;
   var t=document.getElementById("gTxt");t.textContent=GST&&GST.email?("Continue como "+GST.email+" para voltar a salvar na sua planilha."):"Entre com a sua conta Gmail. O app cria a sua planilha no seu Google Drive e salva tudo nela, sem precisar de mais nada.";
-  document.getElementById("gErr").textContent="";d.showModal();}
+  document.getElementById("lgErr").textContent="";d.showModal();}
 function gStatus(){var s=document.getElementById("gSt");if(!s)return;var on=API&&API.google;
   s.textContent=on?("Conectado como "+(GST&&GST.email||"conta Google")+". Os dados são salvos na planilha “"+GNOME+"” do seu Drive."):"Não conectado. Entre com a sua conta Google para criar e usar a sua planilha.";
   document.getElementById("gIn").hidden=!!on;document.getElementById("gOut").hidden=!on;
   }
 document.getElementById("gIn").addEventListener("click",function(){gEntrar(this,document.getElementById("gErr1"));});
-document.getElementById("gIn2").addEventListener("click",function(){gEntrar(this,document.getElementById("gErr"));});
-document.getElementById("gNo").addEventListener("click",function(){document.getElementById("dlgG").close();});
+document.getElementById("gIn2").addEventListener("click",function(){gEntrar(this,document.getElementById("lgErr"));});
+document.getElementById("lgNo").addEventListener("click",function(){document.getElementById("dlgG").close();});
 document.getElementById("gOut").addEventListener("click",gSair);
 </script>
 <script>
